@@ -32,6 +32,8 @@ selecting what to label next, and submitting/collecting real VASP jobs.
 ## Installation
 
 ```bash
+git clone https://github.com/anwinjohn98/al-dirac.git
+cd al-dirac
 pip install -e .[ml,dft,dev]
 ```
 
@@ -73,6 +75,11 @@ where one is needed.
 Actively developed against a single real system (Pt-surface ORR intermediates) as the
 validation case; the model/uncertainty/sampling APIs are designed to be backend-agnostic
 so other MLIP backends can be added. Not yet packaged with an automated test suite.
+
+## Reporting issues
+
+Found a bug or hit something confusing? Please open an issue at
+[github.com/anwinjohn98/al-dirac/issues](https://github.com/anwinjohn98/al-dirac/issues).
 
 ## License
 
