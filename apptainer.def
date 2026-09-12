@@ -1,0 +1,27 @@
+Bootstrap: docker
+From: python:3.11-slim
+
+%post
+    apt-get update
+    apt-get install -y --no-install-recommends \
+	build-essential git gfortran \
+	libopenblas-dev liblapack-dev pkg-config \
+	&& rm -rf /var/lib/apt/lists/*
+
+    python -m pip install --upgrade pip setuptools wheel
+
+    pip install \
+	numpy scipy ase pyyaml tqdm scikit-learn pandas \
+	dscribe matplotlib pymatgen custodian
+
+    pip install torch
+    pip install git+https://github.com/ACEsuit/mace.git
+    pip install cuequivariance-torch cuequivariance-ops-torch-cu13
+
+%environment
+    export MPLCONFIGDIR=/tmp/al_dirac_matplotlib
+    export XDG_CACHE_HOME=/tmp/al_dirac_cache
+    export PYTHONUNBUFFERED=1
+
+%runscript
+    exec "$@"

@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "al-dirac"  # pip install al-dirac
+version = "0.1.0"
+description = "Active Learning with Diversity, Informativeness, and Representativeness for Atomic Catalysis"
+authors = [
+	{ name = "Anwin John", email = "anwinjohn98@gmail.com" }
+]
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+
+dependencies = [
+  "numpy",
+  "scipy",
+  "ase",
+  "ase-db-backends",
+  "dscribe",
+  "matplotlib",
+  "pyyaml",
+  "tqdm",
+  "scikit-learn",
+  "pandas"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "pytest-cov",
+  "black",
+  "ruff",
+  "mypy"
+]
+
+ml = [
+  "torch",
+  "mace-torch",
+  "fairchem-core"
+]
+
+dft = [
+  "pymatgen",
+  "custodian"
+]
+
+[project.scripts]
+al-dirac = "al_dirac.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["al_dirac*"]
+
+[tool.black]
+line-length = 88
+target-version = ["py39"]
+
+[tool.ruff]
+line-length = 88
+select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"

@@ -1,0 +1,36 @@
+#!/bin/bash
+#SBATCH --job-name=workflow_loop_explore
+#SBATCH --nodes=1
+#SBATCH --gpus-per-node=1
+#SBATCH --ntasks=64
+#SBATCH --mail-user=john51@purdue.edu
+#SBATCH --time=01:00:00
+#SBATCH --partition=smallgpu
+#SBATCH --qos=normal
+#SBATCH --account=jgreeley
+#SBATCH --output=/scratch/gautschi/john51/al_dirac/runs/workflow_loop/slurm-explore-%j.out
+#SBATCH --error=/scratch/gautschi/john51/al_dirac/runs/workflow_loop/slurm-explore-%j.err
+
+REPO_ROOT=/scratch/gautschi/john51/al_dirac
+cd "$REPO_ROOT"
+
+apptainer exec --nv --cleanenv \
+  --bind "$REPO_ROOT":/workspace \
+  al_dirac-python.sif \
+  bash -c "cd /workspace && export PATH=/usr/local/bin:/usr/bin:/bin LD_LIBRARY_PATH=/.singularity.d/libs CC=/usr/bin/gcc CXX=/usr/bin/g++ && python examples/workflow_loop.py explore"
+
+SUBMIT_LIST="$REPO_ROOT/real_example_outputs/workflow_loop/submit_scripts.txt"
+if [ ! -f "$SUBMIT_LIST" ]; then
+    echo "workflow_loop: stopped, no DFT batches to submit"
+    exit 0
+fi
+
+JOB_IDS=()
+while IFS= read -r SCRIPT; do
+    [ -z "$SCRIPT" ] && continue
+    JOBID=$(sbatch --parsable "$SCRIPT")
+    JOB_IDS+=("$JOBID")
+done < "$SUBMIT_LIST"
+
+DEPENDENCY=$(IFS=:; echo "afterok:${JOB_IDS[*]}")
+sbatch --dependency="$DEPENDENCY" "$REPO_ROOT/runs/workflow_loop/workflow_loop_resume.run"

@@ -1,0 +1,23 @@
+#!/bin/bash
+#SBATCH --job-name=uncertainty_selection_example
+#SBATCH --nodes=1
+#SBATCH --gpus-per-node=1
+#SBATCH --ntasks=64
+#SBATCH --mail-user=john51@purdue.edu
+#SBATCH --time=01:00:00
+#SBATCH --partition=smallgpu
+#SBATCH --qos=normal
+#SBATCH --account=jgreeley
+#SBATCH --output=/scratch/gautschi/john51/al_dirac/runs/uncertainty_selection_example/slurm-%j.out
+#SBATCH --error=/scratch/gautschi/john51/al_dirac/runs/uncertainty_selection_example/slurm-%j.err
+
+REPO_ROOT=/scratch/gautschi/john51/al_dirac
+cd "$REPO_ROOT"
+
+# Relies on outputs already produced by examples/model_factory_example.py
+# (the ensemble checkpoints) and examples/sampler_example.py (the candidate
+# structures) -- no need to rerun those here.
+apptainer exec --nv --cleanenv \
+  --bind "$REPO_ROOT":/workspace \
+  al_dirac-python.sif \
+  bash -c "cd /workspace && export PATH=/usr/local/bin:/usr/bin:/bin LD_LIBRARY_PATH=/.singularity.d/libs CC=/usr/bin/gcc CXX=/usr/bin/g++ && python examples/uncertainty_selection_example.py"

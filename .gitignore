@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+
+# Environment / container
+*.sif
+.venv/
+venv/
+
+# Generated example outputs and run logs
+real_example_outputs/
+example_outputs_mock/
+foundational_models/
+runs/*/slurm-*.out
+runs/*/slurm-*.err
+
+# Research data (kept local -- large, and VASP inputs include licensed
+# POTCAR pseudopotentials that must not be redistributed)
+Pt_surface_test/
+
+# MLIP / DFT artifacts, wherever they end up
+*.model
+*.pt
+*.aselmdb
+*.aselmdb-lock
+WAVECAR
+CHG
+CHGCAR
+vaspout.h5
+
+# OS / editor
+.DS_Store
+*.swp

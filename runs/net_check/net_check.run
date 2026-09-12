@@ -1,0 +1,33 @@
+#!/bin/bash
+#SBATCH --job-name=net_check
+#SBATCH --nodes=1
+#SBATCH --gpus-per-node=1
+#SBATCH --ntasks=64
+#SBATCH --time=00:05:00
+#SBATCH --partition=smallgpu
+#SBATCH --qos=normal
+#SBATCH --account=jgreeley
+#SBATCH --output=/scratch/gautschi/john51/al_dirac/runs/net_check/slurm-%j.out
+#SBATCH --error=/scratch/gautschi/john51/al_dirac/runs/net_check/slurm-%j.err
+
+echo "Node: $(hostname)"
+echo "Date: $(date)"
+
+echo "--- DNS resolution ---"
+getent hosts github.com
+getent hosts release-assets.githubusercontent.com
+getent hosts pypi.org
+
+echo "--- curl github.com ---"
+curl -m 10 -sI https://github.com
+echo "exit code: $?"
+
+echo "--- curl actual MP replay asset URL (HEAD, follow redirects) ---"
+curl -m 20 -sI -L "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mp_0b/mp_traj_combined.xyz"
+echo "exit code: $?"
+
+echo "--- curl pypi.org ---"
+curl -m 10 -sI https://pypi.org
+echo "exit code: $?"
+
+echo "done"

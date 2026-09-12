@@ -1,0 +1,20 @@
+#!/bin/bash
+#SBATCH --job-name=mace_multihead_finetune
+#SBATCH --nodes=1
+#SBATCH --gpus-per-node=1
+#SBATCH --ntasks=64
+#SBATCH --mail-user=john51@purdue.edu
+#SBATCH --time=01:00:00
+#SBATCH --partition=smallgpu
+#SBATCH --qos=normal
+#SBATCH --account=jgreeley
+#SBATCH --output=/scratch/gautschi/john51/al_dirac/runs/mace_multihead_finetune/slurm-%j.out
+#SBATCH --error=/scratch/gautschi/john51/al_dirac/runs/mace_multihead_finetune/slurm-%j.err
+
+REPO_ROOT=/scratch/gautschi/john51/al_dirac
+cd "$REPO_ROOT"
+
+apptainer exec --nv --cleanenv \
+  --bind "$REPO_ROOT":/workspace \
+  al_dirac-python.sif \
+  bash -c "cd /workspace && export PATH=/usr/local/bin:/usr/bin:/bin LD_LIBRARY_PATH=/.singularity.d/libs CC=/usr/bin/gcc CXX=/usr/bin/g++ && python examples/parser_example.py && python examples/mace_multihead_finetune.py"

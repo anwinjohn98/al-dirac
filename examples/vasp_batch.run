@@ -1,0 +1,35 @@
+#!/bin/bash
+#SBATCH --job-name=Anwin
+#SBATCH --nodes=1
+#SBATCH --ntasks=128
+#SBATCH --mail-user=john51@purdue.edu
+#SBATCH --time=04:00:00
+#SBATCH --partition=cpu
+#SBATCH --qos=standby
+#SBATCH --account=jgreeley
+
+##SBATCH --output=default_output-%j.out
+##SBATCH --error=default_error-%j.error
+
+#Go in the work directory
+cd $SLURM_SUBMIT_DIR
+
+#Get a node list
+echo $SLURM_JOB_NODELIST
+
+#Compute the total CPU/Cores needed for the specified nodes
+echo 'Total CPUs per node: ' $SLURM_CPUS_ON_NODE
+echo 'Total nodes requested: ' $SLURM_JOB_NUM_NODES
+num_core=$SLURM_CPUS_ON_NODE
+num_node=$SLURM_JOB_NUM_NODES
+let proc_num=$num_core*$num_node
+echo 'Total CPUs for this jobs: nodes x ppn: ' ${proc_num}
+
+echo $(date) $SLURM_JOB_ID $SLURM_SUBMIT_HOST $SLURM_JOB_NAME $SLURM_SUBMIT_DIR >> ~/jobs_submitted.log
+
+module --force purge
+module load intel/2024.1 impi/2021.12
+module load vasp/6.4.3
+__JOB_LOOP__
+
+echo $(date) $SLURM_JOB_ID $SLURM_SUBMIT_HOST $SLURM_JOB_NAME $SLURM_SUBMIT_DIR >> ~/jobs.log
