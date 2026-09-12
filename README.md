@@ -41,7 +41,11 @@ pip install -e .[ml,dft,dev]
 
 MACE training is GPU- and dependency-heavy (PyTorch, `cuequivariance`, CUDA toolchain).
 An `apptainer.def` container definition is included for running on HPC clusters where
-these need to be isolated from the host environment.
+these need to be isolated from the host environment:
+
+```bash
+apptainer build al_dirac-python.sif apptainer.def
+```
 
 ## Usage
 
