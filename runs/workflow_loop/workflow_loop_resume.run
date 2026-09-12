@@ -15,8 +15,14 @@ REPO_ROOT=/scratch/gautschi/john51/al_dirac
 cd "$REPO_ROOT"
 
 apptainer exec --nv --cleanenv \
-  --bind "$REPO_ROOT":/workspace \
+  --bind "$REPO_ROOT":"$REPO_ROOT" \
   al_dirac-python.sif \
-  bash -c "cd /workspace && export PATH=/usr/local/bin:/usr/bin:/bin LD_LIBRARY_PATH=/.singularity.d/libs CC=/usr/bin/gcc CXX=/usr/bin/g++ && python examples/workflow_loop.py resume"
+  bash -c "cd $REPO_ROOT && export PATH=/usr/local/bin:/usr/bin:/bin LD_LIBRARY_PATH=/.singularity.d/libs CC=/usr/bin/gcc CXX=/usr/bin/g++ && python examples/workflow_loop.py resume"
+RESUME_EXIT=$?
+
+if [ "$RESUME_EXIT" -ne 0 ]; then
+    echo "workflow_loop: resume stage failed (exit $RESUME_EXIT)" >&2
+    exit "$RESUME_EXIT"
+fi
 
 sbatch "$REPO_ROOT/runs/workflow_loop/workflow_loop_explore.run"

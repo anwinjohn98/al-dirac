@@ -166,6 +166,7 @@ def write_structure_records(
     is_labeled: bool | None = None,
     is_selected: bool = False,
     source: str | None = None,
+    append: bool = False,
 ) -> list[int] | Path:
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -211,7 +212,15 @@ def write_structure_records(
         return row_ids
 
     if output_format in {"extxyz", "traj"}:
-        write(output_path, _records_to_atoms_list(records), format=output_format)
+        # aselmdb/db above are inherently append-only (each row is added, not
+        # overwritten), so `append` only matters here -- ase.io.write()
+        # overwrites an existing extxyz/traj file by default.
+        write(
+            output_path,
+            _records_to_atoms_list(records),
+            format=output_format,
+            append=append,
+        )
         return output_path
 
     raise ValueError(

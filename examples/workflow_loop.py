@@ -276,6 +276,7 @@ def run_explore() -> None:
 def run_resume() -> None:
     state = load_state(STATE_FILE)
     prepared_batches = load_artifact(PREPARED_BATCHES_FILE)
+    total_jobs = sum(len(batch.get("jobs", [])) for batch in prepared_batches)
 
     incomplete = incomplete_dft_batches(prepared_batches, DFT_RUNNER)
     if incomplete:
@@ -284,16 +285,16 @@ def run_resume() -> None:
     labeled_records = collect_completed_dft_from_batches(prepared_batches, DFT_RUNNER)
     print(f"collected {len(labeled_records)} labeled structures")
 
+    if total_jobs > 0 and not labeled_records:
+        raise RuntimeError(
+            f"All {total_jobs} DFT job(s) failed or did not complete -- no "
+            "labeled structures were collected. Not continuing the loop with "
+            "unchanged training data; fix the underlying DFT issue and "
+            "resubmit this iteration manually (see al_dirac.workflow.restart)."
+        )
+
     if labeled_records:
-        # write_structure_records (like plain ase.io.write) overwrites an
-        # existing extxyz file rather than appending -- read the existing
-        # pool back and rewrite it together with the new structures instead
-        # of discarding everything already accumulated.
-        existing_structures = read(TRAIN_PATH, index=":")
-        if not isinstance(existing_structures, list):
-            existing_structures = [existing_structures]
-        existing_records = [{"atoms": atoms} for atoms in existing_structures]
-        write_structure_records(existing_records + labeled_records, TRAIN_PATH, output_format="extxyz")
+        write_structure_records(labeled_records, TRAIN_PATH, output_format="extxyz", append=True)
 
     # run_iteration()'s own _finish_iteration() already bumped state.iteration
     # before explore saved it -- don't bump it again here.

@@ -15,9 +15,16 @@ REPO_ROOT=/scratch/gautschi/john51/al_dirac
 cd "$REPO_ROOT"
 
 apptainer exec --nv --cleanenv \
-  --bind "$REPO_ROOT":/workspace \
+  --bind "$REPO_ROOT":"$REPO_ROOT" \
+  --bind /depot/jgreeley/apps/vasp/vasppot:/depot/jgreeley/apps/vasp/vasppot \
   al_dirac-python.sif \
-  bash -c "cd /workspace && export PATH=/usr/local/bin:/usr/bin:/bin LD_LIBRARY_PATH=/.singularity.d/libs CC=/usr/bin/gcc CXX=/usr/bin/g++ && python examples/workflow_loop.py explore"
+  bash -c "cd $REPO_ROOT && export PATH=/usr/local/bin:/usr/bin:/bin LD_LIBRARY_PATH=/.singularity.d/libs CC=/usr/bin/gcc CXX=/usr/bin/g++ VASP_PP_PATH=/depot/jgreeley/apps/vasp/vasppot/ && python examples/workflow_loop.py explore"
+EXPLORE_EXIT=$?
+
+if [ "$EXPLORE_EXIT" -ne 0 ]; then
+    echo "workflow_loop: explore stage failed (exit $EXPLORE_EXIT)" >&2
+    exit "$EXPLORE_EXIT"
+fi
 
 SUBMIT_LIST="$REPO_ROOT/real_example_outputs/workflow_loop/submit_scripts.txt"
 if [ ! -f "$SUBMIT_LIST" ]; then
@@ -32,5 +39,5 @@ while IFS= read -r SCRIPT; do
     JOB_IDS+=("$JOBID")
 done < "$SUBMIT_LIST"
 
-DEPENDENCY=$(IFS=:; echo "afterok:${JOB_IDS[*]}")
+DEPENDENCY=$(IFS=:; echo "afterany:${JOB_IDS[*]}")
 sbatch --dependency="$DEPENDENCY" "$REPO_ROOT/runs/workflow_loop/workflow_loop_resume.run"
