@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 import shutil
 import subprocess
 import sys
@@ -54,6 +56,36 @@ class MACEModel(BaseModel):
         if self.checkpoint_dir is None:
             return None
         return self.checkpoint_dir / f"{self.name}.model"
+
+    def latest_validation_metrics(self) -> dict[str, Any] | None:
+        # mace_run_train writes one JSON-lines results file per training
+        # invocation under work_dir/results/, named
+        # "<name>_run-<N>_train.txt" regardless of which split each line's
+        # "mode": "eval" entry actually evaluated during that periodic
+        # in-training pass -- it's the validation set, not train/test.
+        # mae_f/mae_e_per_atom in there are raw eV/A and eV/atom (MACE only
+        # scales by 1e3 for its own log printing), matching this method's
+        # units.
+        if self.checkpoint_dir is None:
+            return None
+        results_dir = Path(self.checkpoint_dir) / "results"
+        if not results_dir.exists():
+            return None
+        matches = list(results_dir.glob(f"{self.name}_run-*_train.txt"))
+        if not matches:
+            return None
+        results_file = max(matches, key=lambda path: path.stat().st_mtime)
+
+        last_eval: dict[str, Any] | None = None
+        with results_file.open() as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                entry = json.loads(line)
+                if entry.get("mode") == "eval":
+                    last_eval = entry
+        return last_eval
 
     def _build_calculator(self) -> None:
         if self.checkpoint_path is None:
@@ -245,6 +277,7 @@ class MACEModel(BaseModel):
         train_args: list[str],
         launch_mode: str = "single",
         nproc_per_node: int = 1,
+        cuda_visible_devices: str | None = None,
     ) -> None:
         train_entry = self._resolve_train_entry()
 
@@ -262,7 +295,11 @@ class MACEModel(BaseModel):
         else:
             raise ValueError("launch_mode must be 'single' or 'torchrun'.")
 
-        subprocess.run(cmd, check=True)
+        env = None
+        if cuda_visible_devices is not None:
+            env = {**os.environ, "CUDA_VISIBLE_DEVICES": cuda_visible_devices}
+
+        subprocess.run(cmd, check=True, env=env)
 
     def select_replay_dataset(
         self,
@@ -339,6 +376,7 @@ class MACEModel(BaseModel):
         distributed: bool = False,
         launch_mode: str = "single",
         nproc_per_node: int = 1,
+        cuda_visible_devices: str | None = None,
         seed: int | None = None,
         extra_args: Sequence[str] | None = None,
     ) -> dict[str, Any]:
@@ -372,6 +410,7 @@ class MACEModel(BaseModel):
             "distributed": distributed,
             "launch_mode": launch_mode,
             "nproc_per_node": nproc_per_node,
+            "cuda_visible_devices": cuda_visible_devices,
             "seed": seed,
             "extra_args": extra_args,
         }
@@ -416,6 +455,7 @@ class MACEModel(BaseModel):
         distributed: bool = False,
         launch_mode: str = "single",
         nproc_per_node: int = 1,
+        cuda_visible_devices: str | None = None,
         seed: int | None = None,
         extra_args: Sequence[str] | None = None,
     ) -> None:
@@ -448,6 +488,7 @@ class MACEModel(BaseModel):
             distributed=distributed,
             launch_mode=launch_mode,
             nproc_per_node=nproc_per_node,
+            cuda_visible_devices=cuda_visible_devices,
             seed=seed,
             extra_args=extra_args,
         )
@@ -457,13 +498,14 @@ class MACEModel(BaseModel):
             **{
                 key: value
                 for key, value in kwargs.items()
-                if key not in {"launch_mode", "nproc_per_node"}
+                if key not in {"launch_mode", "nproc_per_node", "cuda_visible_devices"}
             },
         )
         self._run_training_command(
             train_args=train_args,
             launch_mode=kwargs.get("launch_mode", "single"),
             nproc_per_node=kwargs.get("nproc_per_node", 1),
+            cuda_visible_devices=kwargs.get("cuda_visible_devices"),
         )
         self._load_expected_checkpoint_if_available()
 
@@ -478,6 +520,7 @@ class MACEModel(BaseModel):
         distributed: bool = False,
         launch_mode: str = "single",
         nproc_per_node: int = 1,
+        cuda_visible_devices: str | None = None,
         extra_args: Sequence[str] | None = None,
         **kwargs: Any,
     ) -> None:
@@ -499,6 +542,7 @@ class MACEModel(BaseModel):
             train_args=train_args,
             launch_mode=launch_mode,
             nproc_per_node=nproc_per_node,
+            cuda_visible_devices=cuda_visible_devices,
         )
 
     def multihead_finetune(
@@ -524,6 +568,7 @@ class MACEModel(BaseModel):
         distributed: bool = False,
         launch_mode: str = "single",
         nproc_per_node: int = 1,
+        cuda_visible_devices: str | None = None,
         extra_args: Sequence[str] | None = None,
         **kwargs: Any,
     ) -> None:
@@ -582,6 +627,7 @@ class MACEModel(BaseModel):
             train_args=train_args,
             launch_mode=launch_mode,
             nproc_per_node=nproc_per_node,
+            cuda_visible_devices=cuda_visible_devices,
         )
 
     def lora_finetune(
@@ -597,6 +643,7 @@ class MACEModel(BaseModel):
         distributed: bool = False,
         launch_mode: str = "single",
         nproc_per_node: int = 1,
+        cuda_visible_devices: str | None = None,
         extra_args: Sequence[str] | None = None,
         **kwargs: Any,
     ) -> None:
@@ -621,6 +668,7 @@ class MACEModel(BaseModel):
             train_args=train_args,
             launch_mode=launch_mode,
             nproc_per_node=nproc_per_node,
+            cuda_visible_devices=cuda_visible_devices,
         )
 
     def predict(self, atoms: Any) -> dict[str, Any]:

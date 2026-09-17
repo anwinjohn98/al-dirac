@@ -339,12 +339,13 @@ def main() -> None:
         pre_uncertainty_curation_pipeline=None,
         pre_uncertainty_curation_kwargs=None,
         uncertainty=uncertainty,
-        # Stop once even the most-uncertain candidate drops below F_err's own
-        # "redundant" cutoff (0.1) -- same threshold the paper uses to
-        # exclude configurations from being added to the training set.
+        # The paper's F_err<0.1 "redundant" cutoff is already enforced at
+        # selection time via selector.min_score above -- it isn't used here
+        # as a loop-stopping condition (al_dirac's default stopping check is
+        # now model validation error, not committee disagreement; the paper
+        # doesn't describe that kind of per-iteration convergence check
+        # either, so it's left disabled below rather than guessed at).
         uncertainty_stop_key=UNCERTAINTY_SCORE_EXPRESSION,
-        uncertainty_stop_threshold=UNCERTAINTY_MIN_SCORE,
-        uncertainty_stop_statistic="max",
         uncertainty_stop_expression=UNCERTAINTY_SCORE_EXPRESSION,
         selector=selector,
         uncertainty_curation_pipeline=random_curator,

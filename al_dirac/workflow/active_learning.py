@@ -64,7 +64,7 @@ from al_dirac.workflow.seed_selection import (
     select_seed_records as select_seed_records_impl,
 )
 from al_dirac.workflow.state import WorkflowState
-from al_dirac.workflow.stopping import UncertaintyStoppingCriteria
+from al_dirac.workflow.stopping import ModelErrorStoppingCriteria
 from al_dirac.workflow.train_store import (
     append_labeled_records_to_train_path,
     append_records_to_db,
@@ -667,6 +667,7 @@ class ActiveLearningWorkflow:
         model_factory_train_kwargs: (
             dict[str, Any] | Sequence[dict[str, Any] | None] | None
         ) = None,
+        model_factory_gpu_ids: Sequence[int] | None = None,
         load_model_factory_checkpoints: bool = True,
         parse_base_dir: str | Path | None = None,
         parse_kwargs: dict[str, Any] | None = None,
@@ -687,9 +688,10 @@ class ActiveLearningWorkflow:
         pre_uncertainty_curation_kwargs: dict[str, Any] | None = None,
         uncertainty: BaseUncertainty | None = None,
         uncertainty_stop_key: str = "force_max_uncertainty",
-        uncertainty_stop_threshold: float | None = None,
-        uncertainty_stop_statistic: str = "max",
         uncertainty_stop_expression: str | None = None,
+        model_error_stop_force_threshold: float | None = None,
+        model_error_stop_energy_threshold: float | None = None,
+        model_error_stop_statistic: str = "max",
         selector: BaseSelector | None = None,
         uncertainty_curation_pipeline: BaseStructureCuration | None = None,
         coverage_k: int | None = None,
@@ -812,6 +814,7 @@ class ActiveLearningWorkflow:
         ):
             state.status = WORKFLOW_STATUS_TRAINING
             trained_any_model = False
+            trained_models: list[BaseModel] = []
             workflow_model = self.model if model is None else model
             if train_prediction_model and workflow_model is not None:
                 self.train_model(
@@ -833,7 +836,6 @@ class ActiveLearningWorkflow:
                     factory_train_kwargs = self._resolve_model_factory_train_kwargs(
                         model_factory_train_kwargs, len(factories)
                     )
-                    trained_models: list[BaseModel] = []
                     for factory, factory_kwargs in zip(factories, factory_train_kwargs):
                         trained_models.extend(
                             factory.train(
@@ -841,6 +843,7 @@ class ActiveLearningWorkflow:
                                 valid_path=valid_path,
                                 train_kwargs=factory_kwargs,
                                 load_checkpoints=load_model_factory_checkpoints,
+                                gpu_ids=model_factory_gpu_ids,
                             )
                         )
                     workflow_uncertainty = self.uncertainty if uncertainty is None else uncertainty
@@ -863,6 +866,30 @@ class ActiveLearningWorkflow:
                     artifact=train_path,
                     train_size=state.train_size,
                 )
+
+            model_error_stop_decision = ModelErrorStoppingCriteria(
+                force_threshold=model_error_stop_force_threshold,
+                energy_threshold=model_error_stop_energy_threshold,
+                statistic=model_error_stop_statistic,
+            ).check(trained_models)
+            if model_error_stop_decision.should_stop:
+                state.stop_reason = model_error_stop_decision.reason
+                if logger is not None:
+                    logger.log_event(
+                        "stopping_criteria_met",
+                        state=state,
+                        reason=model_error_stop_decision.reason,
+                        details=model_error_stop_decision.details,
+                        force_threshold=model_error_stop_force_threshold,
+                        energy_threshold=model_error_stop_energy_threshold,
+                        statistic=model_error_stop_statistic,
+                    )
+                    logger.log_note(
+                        f"stopping criteria met: {model_error_stop_decision.reason}",
+                        state=state,
+                    )
+                self._finish_iteration(state, logger, plot_dir)
+                return []
 
         if self._stage_allowed("sampling", restart_from_stage):
             if candidate_structures is None:
@@ -1045,46 +1072,6 @@ class ActiveLearningWorkflow:
                     stage="scoring",
                     artifact_dir=artifact_dir,
                 )
-            stop_decision = UncertaintyStoppingCriteria(
-                key=uncertainty_stop_key,
-                threshold=uncertainty_stop_threshold,
-                statistic=uncertainty_stop_statistic,
-                expression=uncertainty_stop_expression,
-            ).check(scored_records)
-            if stop_decision.should_stop:
-                state.stop_reason = stop_decision.reason
-                if logger is not None:
-                    logger.log_event(
-                        "stopping_criteria_met",
-                        state=state,
-                        reason=stop_decision.reason,
-                        value=stop_decision.value,
-                        key=uncertainty_stop_key,
-                        threshold=uncertainty_stop_threshold,
-                        statistic=uncertainty_stop_statistic,
-                        expression=uncertainty_stop_expression,
-                    )
-                    logger.log_note(
-                        f"stopping criteria met: {stop_decision.reason}",
-                        state=state,
-                    )
-                write_iteration_plots(
-                    scored_records,
-                    state=state,
-                    plot_dir=plot_dir,
-                    selected_records=[],
-                    curation_result=curation_result,
-                    logger=logger,
-                )
-                if plot_dir is not None:
-                    iteration_dir = Path(plot_dir) / f"iteration_{state.iteration:04d}"
-                    write_records_extxyz(
-                        scored_records,
-                        iteration_dir / "scored_pool.extxyz",
-                    )
-                self._finish_iteration(state, logger, plot_dir)
-                return []
-
             uncertainty_curation_report: CurationStageReport | None = None
             if self._stage_allowed("selecting", restart_from_stage):
                 state.status = WORKFLOW_STATUS_SELECTING
@@ -1206,6 +1193,7 @@ class ActiveLearningWorkflow:
         model_factory_train_kwargs: (
             dict[str, Any] | Sequence[dict[str, Any] | None] | None
         ) = None,
+        model_factory_gpu_ids: Sequence[int] | None = None,
         load_model_factory_checkpoints: bool = True,
         parse_base_dir: str | Path | None = None,
         parse_kwargs: dict[str, Any] | None = None,
@@ -1226,9 +1214,10 @@ class ActiveLearningWorkflow:
         pre_uncertainty_curation_kwargs: dict[str, Any] | None = None,
         uncertainty: BaseUncertainty | None = None,
         uncertainty_stop_key: str = "force_max_uncertainty",
-        uncertainty_stop_threshold: float | None = None,
-        uncertainty_stop_statistic: str = "max",
         uncertainty_stop_expression: str | None = None,
+        model_error_stop_force_threshold: float | None = None,
+        model_error_stop_energy_threshold: float | None = None,
+        model_error_stop_statistic: str = "max",
         selector: BaseSelector | None = None,
         uncertainty_curation_pipeline: BaseStructureCuration | None = None,
         coverage_k: int | None = None,
@@ -1297,6 +1286,7 @@ class ActiveLearningWorkflow:
                 train_kwargs=train_kwargs,
                 model_factory=model_factory,
                 model_factory_train_kwargs=model_factory_train_kwargs,
+                model_factory_gpu_ids=model_factory_gpu_ids,
                 load_model_factory_checkpoints=load_model_factory_checkpoints,
                 parse_base_dir=iteration_parse_base_dir,
                 parse_kwargs=parse_kwargs,
@@ -1317,9 +1307,10 @@ class ActiveLearningWorkflow:
                 pre_uncertainty_curation_kwargs=pre_uncertainty_curation_kwargs,
                 uncertainty=uncertainty,
                 uncertainty_stop_key=uncertainty_stop_key,
-                uncertainty_stop_threshold=uncertainty_stop_threshold,
-                uncertainty_stop_statistic=uncertainty_stop_statistic,
                 uncertainty_stop_expression=uncertainty_stop_expression,
+                model_error_stop_force_threshold=model_error_stop_force_threshold,
+                model_error_stop_energy_threshold=model_error_stop_energy_threshold,
+                model_error_stop_statistic=model_error_stop_statistic,
                 selector=selector,
                 uncertainty_curation_pipeline=uncertainty_curation_pipeline,
                 coverage_k=coverage_k,

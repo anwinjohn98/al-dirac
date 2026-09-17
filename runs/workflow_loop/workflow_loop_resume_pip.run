@@ -1,0 +1,29 @@
+#!/bin/bash
+#SBATCH --job-name=workflow_loop_resume
+#SBATCH --nodes=1
+#SBATCH --gpus-per-node=1
+#SBATCH --ntasks=64
+#SBATCH --mail-user=john51@purdue.edu
+#SBATCH --time=01:00:00
+#SBATCH --partition=smallgpu
+#SBATCH --qos=normal
+#SBATCH --account=jgreeley
+#SBATCH --output=/scratch/gautschi/john51/al_dirac/runs/workflow_loop/slurm-resume-%j.out
+#SBATCH --error=/scratch/gautschi/john51/al_dirac/runs/workflow_loop/slurm-resume-%j.err
+
+REPO_ROOT=/scratch/gautschi/john51/al_dirac
+cd "$REPO_ROOT"
+
+# No container here -- activate whatever Python environment has al_dirac
+# installed (pip install -e .[ml,dft,dev]) before this script runs, or add
+# your own conda/venv activation line here.
+
+python Pt_surface_test/examples/workflow_loop.py resume
+RESUME_EXIT=$?
+
+if [ "$RESUME_EXIT" -ne 0 ]; then
+    echo "workflow_loop: resume stage failed (exit $RESUME_EXIT)" >&2
+    exit "$RESUME_EXIT"
+fi
+
+sbatch "$REPO_ROOT/runs/workflow_loop/workflow_loop_explore_pip.run"

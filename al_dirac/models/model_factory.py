@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from pathlib import Path
 import random
@@ -343,6 +344,51 @@ class ModelEnsembleFactory:
     def build(self) -> list[ModelT]:
         return [self.model_cls(**kwargs) for kwargs in self.build_kwargs()]
 
+    def _train_one(
+        self,
+        index: int,
+        model: ModelT,
+        *,
+        train_path: str | Path,
+        valid_path: str | Path | None,
+        base_train_kwargs: dict[str, Any],
+        load_checkpoints: bool,
+        gpu_id: int | None,
+    ) -> None:
+        model_train_kwargs = dict(base_train_kwargs)
+        model_train_kwargs.setdefault(self.train_key, train_path)
+        if valid_path is not None:
+            model_train_kwargs.setdefault(self.valid_key, valid_path)
+        if gpu_id is not None:
+            model_train_kwargs.setdefault("cuda_visible_devices", str(gpu_id))
+
+        for strategy in self.strategies:
+            model_train_kwargs = strategy.prepare_training(index, model_train_kwargs)
+
+        method = getattr(model, self.training_method, None)
+        if method is None or not callable(method):
+            raise ValueError(
+                f"{type(model).__name__} does not support training_method "
+                f"'{self.training_method}'."
+            )
+
+        # Fully keyword, with no assumptions about which arguments the
+        # training method accepts beyond train_key/valid_key: this makes
+        # the factory work with train()/finetune()/lora_finetune()/
+        # multihead_finetune() alike (which differ in whether
+        # foundation_model is a required positional argument), and with
+        # any future model backend by reconfiguring train_key/valid_key
+        # to match its own method signature.
+        method(**model_train_kwargs)
+        if not load_checkpoints:
+            return
+        expected_checkpoint = getattr(model, "expected_checkpoint_path", None)
+        if expected_checkpoint is None:
+            return
+        checkpoint_path = expected_checkpoint()
+        if checkpoint_path is not None and checkpoint_path.exists():
+            model.save(checkpoint_path)
+
     def train(
         self,
         train_path: str | Path,
@@ -350,41 +396,49 @@ class ModelEnsembleFactory:
         valid_path: str | Path | None = None,
         train_kwargs: dict[str, Any] | None = None,
         load_checkpoints: bool = True,
+        gpu_ids: Sequence[int] | None = None,
     ) -> list[ModelT]:
         base_train_kwargs = {} if train_kwargs is None else dict(train_kwargs)
         models = self.build()
-        for index, model in enumerate(models):
-            model_train_kwargs = dict(base_train_kwargs)
-            model_train_kwargs.setdefault(self.train_key, train_path)
-            if valid_path is not None:
-                model_train_kwargs.setdefault(self.valid_key, valid_path)
 
-            for strategy in self.strategies:
-                model_train_kwargs = strategy.prepare_training(
-                    index, model_train_kwargs
+        if gpu_ids is None:
+            for index, model in enumerate(models):
+                self._train_one(
+                    index,
+                    model,
+                    train_path=train_path,
+                    valid_path=valid_path,
+                    base_train_kwargs=base_train_kwargs,
+                    load_checkpoints=load_checkpoints,
+                    gpu_id=None,
                 )
+            return models
 
-            method = getattr(model, self.training_method, None)
-            if method is None or not callable(method):
-                raise ValueError(
-                    f"{type(model).__name__} does not support training_method "
-                    f"'{self.training_method}'."
+        # gpu_ids given: each ensemble member is an independent training run
+        # (different seed/hyperparameters), so training them concurrently on
+        # separate GPUs -- rather than one after another on a single GPU --
+        # is safe and cuts ensemble wall-clock time roughly by GPU count.
+        # cuda_visible_devices pins each subprocess to one physical GPU via
+        # its own environment, so concurrent subprocess.run calls don't
+        # collide on the same device even though they share this process.
+        if not gpu_ids:
+            raise ValueError("gpu_ids must be non-empty when provided.")
+
+        with ThreadPoolExecutor(max_workers=len(models)) as executor:
+            futures = [
+                executor.submit(
+                    self._train_one,
+                    index,
+                    model,
+                    train_path=train_path,
+                    valid_path=valid_path,
+                    base_train_kwargs=base_train_kwargs,
+                    load_checkpoints=load_checkpoints,
+                    gpu_id=gpu_ids[index % len(gpu_ids)],
                 )
+                for index, model in enumerate(models)
+            ]
+            for future in futures:
+                future.result()
 
-            # Fully keyword, with no assumptions about which arguments the
-            # training method accepts beyond train_key/valid_key: this makes
-            # the factory work with train()/finetune()/lora_finetune()/
-            # multihead_finetune() alike (which differ in whether
-            # foundation_model is a required positional argument), and with
-            # any future model backend by reconfiguring train_key/valid_key
-            # to match its own method signature.
-            method(**model_train_kwargs)
-            if not load_checkpoints:
-                continue
-            expected_checkpoint = getattr(model, "expected_checkpoint_path", None)
-            if expected_checkpoint is None:
-                continue
-            checkpoint_path = expected_checkpoint()
-            if checkpoint_path is not None and checkpoint_path.exists():
-                model.save(checkpoint_path)
         return models

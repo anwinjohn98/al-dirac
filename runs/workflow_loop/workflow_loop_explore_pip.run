@@ -1,0 +1,45 @@
+#!/bin/bash
+#SBATCH --job-name=workflow_loop_explore
+#SBATCH --nodes=1
+#SBATCH --gpus-per-node=1
+#SBATCH --ntasks=64
+#SBATCH --mail-user=john51@purdue.edu
+#SBATCH --time=01:00:00
+#SBATCH --partition=smallgpu
+#SBATCH --qos=normal
+#SBATCH --account=jgreeley
+#SBATCH --output=/scratch/gautschi/john51/al_dirac/runs/workflow_loop/slurm-explore-%j.out
+#SBATCH --error=/scratch/gautschi/john51/al_dirac/runs/workflow_loop/slurm-explore-%j.err
+
+REPO_ROOT=/scratch/gautschi/john51/al_dirac
+cd "$REPO_ROOT"
+
+# No container here -- activate whatever Python environment has al_dirac
+# installed (pip install -e .[ml,dft,dev]) before this script runs, or add
+# your own conda/venv activation line here.
+
+export VASP_PP_PATH=/depot/jgreeley/apps/vasp/vasppot/
+
+python Pt_surface_test/examples/workflow_loop.py explore
+EXPLORE_EXIT=$?
+
+if [ "$EXPLORE_EXIT" -ne 0 ]; then
+    echo "workflow_loop: explore stage failed (exit $EXPLORE_EXIT)" >&2
+    exit "$EXPLORE_EXIT"
+fi
+
+SUBMIT_LIST="$REPO_ROOT/Pt_surface_test/real_example_outputs/workflow_loop/submit_scripts.txt"
+if [ ! -f "$SUBMIT_LIST" ]; then
+    echo "workflow_loop: stopped, no DFT batches to submit"
+    exit 0
+fi
+
+JOB_IDS=()
+while IFS= read -r SCRIPT; do
+    [ -z "$SCRIPT" ] && continue
+    JOBID=$(sbatch --parsable "$SCRIPT")
+    JOB_IDS+=("$JOBID")
+done < "$SUBMIT_LIST"
+
+DEPENDENCY=$(IFS=:; echo "afterany:${JOB_IDS[*]}")
+sbatch --dependency="$DEPENDENCY" "$REPO_ROOT/runs/workflow_loop/workflow_loop_resume_pip.run"
