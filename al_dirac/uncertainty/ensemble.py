@@ -43,6 +43,7 @@ class EnsembleUncertainty(BaseUncertainty):
             "force_atomwise_uncertainty": None,
             "force_mean_uncertainty": None,
             "force_max_uncertainty": None,
+            "force_magnitude_per_atom": None,
             "force_rho": None,
             "stress_mean": None,
             "stress_std": None,
@@ -73,6 +74,7 @@ class EnsembleUncertainty(BaseUncertainty):
             result["force_atomwise_uncertainty"] = force_atomwise_uncertainty
             result["force_mean_uncertainty"] = force_mean_uncertainty
             result["force_max_uncertainty"] = force_max_uncertainty
+            result["force_magnitude_per_atom"] = np.linalg.norm(forces_mean, axis=-1)
             result["force_rho"] = float(
                 np.sqrt(2.0 / (n_models * max(n_atoms, 1)))
                 * force_mean_uncertainty

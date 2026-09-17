@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import time
@@ -45,6 +46,8 @@ class WorkflowLogger:
     def _json_default(self, value: Any) -> Any:
         if isinstance(value, Path):
             return str(value)
+        if dataclasses.is_dataclass(value) and not isinstance(value, type):
+            return dataclasses.asdict(value)
         if hasattr(value, "tolist"):
             return value.tolist()
         return str(value)
@@ -116,11 +119,18 @@ class WorkflowLogger:
     def log_state(self, state: WorkflowState) -> None:
         self._write_json(self.metrics_path, self.compact_state(state))
 
+    def _rule(self, char: str = "=", width: int = 70) -> str:
+        return char * width
+
     def log_iteration_start(self, state: WorkflowState) -> None:
         self.iteration_start_time = time.perf_counter()
         self.stage_start_time = self.iteration_start_time
         self.log_event("iteration_start", state=state)
-        self._append_text(f"iteration {state.iteration} start")
+        self._append_text(
+            f"\n{self._rule('=')}\n"
+            f"ITERATION {state.iteration}\n"
+            f"{self._rule('=')}"
+        )
         self.log_state(state)
 
     def log_iteration_end(self, state: WorkflowState) -> None:
@@ -134,11 +144,12 @@ class WorkflowLogger:
             iteration_elapsed_seconds=iteration_elapsed,
         )
         self._append_text(
-            f"iteration {state.iteration} end: "
-            f"train={state.train_size} "
-            f"pool={state.pool_size} "
-            f"selected={state.selected_size} "
-            f"elapsed_seconds={iteration_elapsed}"
+            f"{self._rule('-')}\n"
+            f"ITERATION {state.iteration} SUMMARY\n"
+            f"{self._rule('-')}\n"
+            f"  train={state.train_size}  pool={state.pool_size}  selected={state.selected_size}\n"
+            f"  elapsed: {iteration_elapsed}s\n"
+            f"{self._rule('-')}"
         )
         self.log_state(state)
 
@@ -162,15 +173,36 @@ class WorkflowLogger:
             **data,
         )
 
-        summary = f"{stage}: completed"
+        # Curation stage reports get their own indented lines rather than
+        # being flattened into the generic key=value detail line below.
+        curation_stage_reports = data.pop("curation_stage_reports", None)
+
+        lines = [f"  [{stage}] completed ({stage_elapsed}s)"]
         if artifact_value is not None:
-            summary += f" artifact={artifact_value}"
-        summary += f" stage_elapsed_seconds={stage_elapsed}"
+            lines.append(f"      artifact: {artifact_value}")
         if data:
-            summary += " " + " ".join(f"{key}={value}" for key, value in data.items())
-        self._append_text(summary)
+            detail = ", ".join(f"{key}={value}" for key, value in data.items())
+            lines.append(f"      {detail}")
+        if curation_stage_reports:
+            for report in curation_stage_reports:
+                lines.append(
+                    f"      curation[{report.stage}]: "
+                    f"{report.input_count} -> {report.kept_count} "
+                    f"(removed {report.removed_count})"
+                )
+        self._append_text("\n".join(lines))
         self.stage_start_time = time.perf_counter()
         self.log_state(state)
+
+    def log_note(
+        self,
+        message: str,
+        *,
+        state: WorkflowState | None = None,
+        **data: Any,
+    ) -> None:
+        self.log_event("note", state=state, message=message, **data)
+        self._append_text(f"  -- {message}")
 
     def log_error(
         self,
@@ -185,5 +217,10 @@ class WorkflowLogger:
             error_message=str(error),
             **data,
         )
-        self._append_text(f"error {type(error).__name__}: {error}")
+        self._append_text(
+            f"{self._rule('!')}\n"
+            f"ERROR: {type(error).__name__}\n"
+            f"{error}\n"
+            f"{self._rule('!')}"
+        )
         self.log_state(state)

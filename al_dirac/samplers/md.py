@@ -44,6 +44,7 @@ class MDSampler(BaseSampler):
         dynamics_kwargs: dict[str, Any] | None = None,
         log_progress: bool = False,
         log_interval: int | None = None,
+        calculator: Any = None,
     ) -> None:
         super().__init__(sampler_name="md")
 
@@ -68,6 +69,7 @@ class MDSampler(BaseSampler):
         self.dynamics_kwargs = {} if dynamics_kwargs is None else dict(dynamics_kwargs)
         self.log_progress = log_progress
         self.log_interval = log_interval
+        self.calculator = calculator
 
     def _get_dynamics_class(self):
         spec = _DYNAMICS_SPECS[self.dynamics_name]
@@ -121,8 +123,11 @@ class MDSampler(BaseSampler):
         )
 
     def sample(self, atoms: Atoms, **kwargs: Any) -> list[Atoms]:
+        if self.calculator is None:
+            raise ValueError("MDSampler requires a calculator -- pass calculator=... .")
+
         trial = atoms.copy()
-        trial.calc = atoms.calc
+        trial.calc = self.calculator
 
         self._initialize_velocities(trial)
         dyn = self._build_dynamics(trial)

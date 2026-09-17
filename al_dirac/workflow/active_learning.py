@@ -3,9 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+import numpy as np
 from ase import Atoms
 from ase.db import connect
 from ase.db.core import Database
+from ase.io import read
 
 from al_dirac.constants import (
     WORKFLOW_STATUS_COMPLETE,
@@ -17,7 +19,11 @@ from al_dirac.constants import (
     WORKFLOW_STATUS_SELECTING,
     WORKFLOW_STATUS_TRAINING,
 )
-from al_dirac.curator.base import CurationResult
+from al_dirac.curator.base import (
+    BaseStructureCuration,
+    CurationResult,
+    CurationStageReport,
+)
 from al_dirac.curator.structure_curation import StructureCurationPipeline
 from al_dirac.dft.batch import BatchDFTRunner
 from al_dirac.models.base import BaseModel
@@ -29,6 +35,7 @@ from al_dirac.parser.structure_parser import (
 )
 from al_dirac.samplers.base import BaseSampler
 from al_dirac.selection.base import BaseSelector
+from al_dirac.selection.score_expression import ScoreExpressionEvaluator
 from al_dirac.uncertainty.base import BaseUncertainty
 from al_dirac.workflow.restart import (
     build_restart_plan,
@@ -80,6 +87,38 @@ WORKFLOW_STAGE_SEQUENCE = (
 )
 
 
+def _score_statistics(
+    records: list[dict[str, Any]],
+    *,
+    key: str,
+    expression: str | None,
+) -> dict[str, float] | None:
+    evaluator = ScoreExpressionEvaluator(score_expression=expression or key)
+    values = [
+        value
+        for record in records
+        if (value := evaluator.evaluate(record)) is not None
+    ]
+    if not values:
+        return None
+    array = np.asarray(values, dtype=float)
+    return {
+        "score_min": float(np.min(array)),
+        "score_mean": float(np.mean(array)),
+        "score_max": float(np.max(array)),
+    }
+
+
+def _count_train_records(train_path: str | Path) -> int:
+    path = Path(train_path)
+    if path.suffix == ".aselmdb":
+        return len(connect(str(path)))
+    if not path.exists():
+        return 0
+    structures = read(path, index=":")
+    return len(structures) if isinstance(structures, list) else 1
+
+
 class ActiveLearningWorkflow:
     def __init__(
         self,
@@ -92,6 +131,7 @@ class ActiveLearningWorkflow:
         sampler: BaseSampler | None = None,
         dft_runner: BatchDFTRunner | None = None,
         coverage_curation_pipeline: StructureCurationPipeline | None = None,
+        uncertainty_curation_pipeline: BaseStructureCuration | None = None,
     ) -> None:
         self.uncertainty = uncertainty
         self.selector = selector
@@ -102,6 +142,7 @@ class ActiveLearningWorkflow:
         self.sampler = sampler
         self.dft_runner = dft_runner
         self.coverage_curation_pipeline = coverage_curation_pipeline
+        self.uncertainty_curation_pipeline = uncertainty_curation_pipeline
 
     def _checkpoint_records(
         self,
@@ -443,10 +484,33 @@ class ActiveLearningWorkflow:
         uncertainty_k: int | None = None,
         *,
         selector: BaseSelector | None = None,
+        uncertainty_curation_pipeline: BaseStructureCuration | None = None,
         coverage_k: int | None = None,
         coverage_curation_pipeline: StructureCurationPipeline | None = None,
         coverage_curation_kwargs: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
+        merged, _ = self._select_for_labeling_with_report(
+            scored_records,
+            uncertainty_k,
+            selector=selector,
+            uncertainty_curation_pipeline=uncertainty_curation_pipeline,
+            coverage_k=coverage_k,
+            coverage_curation_pipeline=coverage_curation_pipeline,
+            coverage_curation_kwargs=coverage_curation_kwargs,
+        )
+        return merged
+
+    def _select_for_labeling_with_report(
+        self,
+        scored_records: list[dict[str, Any]],
+        uncertainty_k: int | None = None,
+        *,
+        selector: BaseSelector | None = None,
+        uncertainty_curation_pipeline: BaseStructureCuration | None = None,
+        coverage_k: int | None = None,
+        coverage_curation_pipeline: StructureCurationPipeline | None = None,
+        coverage_curation_kwargs: dict[str, Any] | None = None,
+    ) -> tuple[list[dict[str, Any]], CurationStageReport | None]:
         if uncertainty_k is not None and uncertainty_k < 0:
             raise ValueError("uncertainty_k must be non-negative or None.")
         if coverage_k is not None and coverage_k < 0:
@@ -468,6 +532,17 @@ class ActiveLearningWorkflow:
             )
             for record in uncertainty_records
         ]
+
+        curation_pipeline = (
+            self.uncertainty_curation_pipeline
+            if uncertainty_curation_pipeline is None
+            else uncertainty_curation_pipeline
+        )
+        uncertainty_curation_report: CurationStageReport | None = None
+        if curation_pipeline is not None and uncertainty_records:
+            curation_result = curation_pipeline.curate_records(uncertainty_records)
+            uncertainty_records = curation_result.kept_records
+            uncertainty_curation_report = curation_result.stage_reports[0]
 
         selected_ids = {record_identity(record) for record in uncertainty_records}
         remaining_records = [
@@ -495,7 +570,7 @@ class ActiveLearningWorkflow:
             merged.append(record)
             seen_ids.add(record_id)
 
-        return merged
+        return merged, uncertainty_curation_report
 
     def select_for_coverage(
         self,
@@ -616,6 +691,7 @@ class ActiveLearningWorkflow:
         uncertainty_stop_statistic: str = "max",
         uncertainty_stop_expression: str | None = None,
         selector: BaseSelector | None = None,
+        uncertainty_curation_pipeline: BaseStructureCuration | None = None,
         coverage_k: int | None = None,
         coverage_curation_pipeline: StructureCurationPipeline | None = None,
         coverage_curation_kwargs: dict[str, Any] | None = None,
@@ -688,8 +764,7 @@ class ActiveLearningWorkflow:
                     train_path,
                     parsed_labeled_records,
                 )
-                if Path(train_path).suffix == ".aselmdb":
-                    state.train_size = len(connect(str(train_path)))
+                state.train_size = _count_train_records(train_path)
 
             self._write_parser_outputs(
                 parsed_records,
@@ -780,6 +855,7 @@ class ActiveLearningWorkflow:
                 raise RuntimeError(
                     "train_path was provided, but no model or model_factory was available for training."
                 )
+            state.train_size = _count_train_records(train_path)
             if logger is not None:
                 logger.log_stage_completed(
                     state,
@@ -910,6 +986,11 @@ class ActiveLearningWorkflow:
                     stage="curating",
                     artifact_dir=artifact_dir,
                     logger=logger,
+                    curation_stage_reports=(
+                        curation_result.stage_reports
+                        if curation_result is not None
+                        else None
+                    ),
                 )
             else:
                 candidate_records = self._load_checkpoint_records(
@@ -945,12 +1026,18 @@ class ActiveLearningWorkflow:
                     candidate_records,
                     uncertainty=uncertainty,
                 )
+                score_stats = _score_statistics(
+                    scored_records,
+                    key=uncertainty_stop_key,
+                    expression=uncertainty_stop_expression,
+                )
                 self._checkpoint_records(
                     scored_records,
                     state=state,
                     stage="scoring",
                     artifact_dir=artifact_dir,
                     logger=logger,
+                    **(score_stats or {}),
                 )
             else:
                 scored_records = self._load_checkpoint_records(
@@ -977,6 +1064,10 @@ class ActiveLearningWorkflow:
                         statistic=uncertainty_stop_statistic,
                         expression=uncertainty_stop_expression,
                     )
+                    logger.log_note(
+                        f"stopping criteria met: {stop_decision.reason}",
+                        state=state,
+                    )
                 write_iteration_plots(
                     scored_records,
                     state=state,
@@ -994,15 +1085,19 @@ class ActiveLearningWorkflow:
                 self._finish_iteration(state, logger, plot_dir)
                 return []
 
+            uncertainty_curation_report: CurationStageReport | None = None
             if self._stage_allowed("selecting", restart_from_stage):
                 state.status = WORKFLOW_STATUS_SELECTING
-                selected_records = self.select_for_labeling(
-                    scored_records,
-                    uncertainty_k=uncertainty_k,
-                    selector=selector,
-                    coverage_k=coverage_k,
-                    coverage_curation_pipeline=coverage_curation_pipeline,
-                    coverage_curation_kwargs=coverage_curation_kwargs,
+                selected_records, uncertainty_curation_report = (
+                    self._select_for_labeling_with_report(
+                        scored_records,
+                        uncertainty_k=uncertainty_k,
+                        selector=selector,
+                        uncertainty_curation_pipeline=uncertainty_curation_pipeline,
+                        coverage_k=coverage_k,
+                        coverage_curation_pipeline=coverage_curation_pipeline,
+                        coverage_curation_kwargs=coverage_curation_kwargs,
+                    )
                 )
             else:
                 selected_records = self._load_checkpoint_records(
@@ -1011,6 +1106,19 @@ class ActiveLearningWorkflow:
                     artifact_dir=artifact_dir,
                 )
         if self._stage_allowed("selecting", restart_from_stage):
+            uncertainty_curation_data: dict[str, Any] = {}
+            if uncertainty_curation_report is not None:
+                uncertainty_curation_data = {
+                    "uncertainty_curation_input_count": (
+                        uncertainty_curation_report.input_count
+                    ),
+                    "uncertainty_curation_kept_count": (
+                        uncertainty_curation_report.kept_count
+                    ),
+                    "uncertainty_curation_removed_count": (
+                        uncertainty_curation_report.removed_count
+                    ),
+                }
             self._checkpoint_records(
                 selected_records,
                 state=state,
@@ -1018,6 +1126,7 @@ class ActiveLearningWorkflow:
                 artifact_dir=artifact_dir,
                 logger=logger,
                 selection_mode=resolved_selection_mode,
+                **uncertainty_curation_data,
             )
         state.selected_size = len(selected_records)
         plot_records = candidate_records if resolved_selection_mode == "cold_start" else scored_records
@@ -1058,8 +1167,7 @@ class ActiveLearningWorkflow:
         )
         if train_path is not None:
             append_labeled_records_to_train_path(train_path, labeled_records)
-            if Path(train_path).suffix == ".aselmdb":
-                state.train_size = len(connect(str(train_path)))
+            state.train_size = _count_train_records(train_path)
 
         labeled_records = annotate_dft_labels(labeled_records)
         write_labeling_plots(
@@ -1122,6 +1230,7 @@ class ActiveLearningWorkflow:
         uncertainty_stop_statistic: str = "max",
         uncertainty_stop_expression: str | None = None,
         selector: BaseSelector | None = None,
+        uncertainty_curation_pipeline: BaseStructureCuration | None = None,
         coverage_k: int | None = None,
         coverage_curation_pipeline: StructureCurationPipeline | None = None,
         coverage_curation_kwargs: dict[str, Any] | None = None,
@@ -1212,6 +1321,7 @@ class ActiveLearningWorkflow:
                 uncertainty_stop_statistic=uncertainty_stop_statistic,
                 uncertainty_stop_expression=uncertainty_stop_expression,
                 selector=selector,
+                uncertainty_curation_pipeline=uncertainty_curation_pipeline,
                 coverage_k=coverage_k,
                 coverage_curation_pipeline=coverage_curation_pipeline,
                 coverage_curation_kwargs=coverage_curation_kwargs,

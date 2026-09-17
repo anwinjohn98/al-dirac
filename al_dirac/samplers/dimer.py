@@ -21,6 +21,7 @@ class DimerSampler(BaseSampler):
         comm: Any = None,
         collect_trajectory: bool = False,
         sample_interval: int = 1,
+        calculator: Any = None,
     ) -> None:
         super().__init__(sampler_name="dimer")
 
@@ -36,6 +37,7 @@ class DimerSampler(BaseSampler):
         self.comm = comm
         self.collect_trajectory = collect_trajectory
         self.sample_interval = sample_interval
+        self.calculator = calculator
 
     def _build_default_displacement(self, atoms: Atoms) -> np.ndarray:
         displacement = np.zeros((len(atoms), 3), dtype=float)
@@ -62,8 +64,11 @@ class DimerSampler(BaseSampler):
         return displace_kwargs
 
     def sample(self, atoms: Atoms, **kwargs: Any) -> list[Atoms]:
+        if self.calculator is None:
+            raise ValueError("DimerSampler requires a calculator -- pass calculator=... .")
+
         trial = atoms.copy()
-        trial.calc = atoms.calc
+        trial.calc = self.calculator
 
         control_kwargs = dict(self.control_kwargs)
         control_kwargs.update(kwargs.get("control_kwargs", {}))

@@ -12,11 +12,13 @@ class EnsembleUncertaintySelector(BaseSelector):
         score_expression: str = "force_max_uncertainty",
         larger_is_better: bool = True,
         min_score: float | None = None,
+        max_score: float | None = None,
     ) -> None:
         super().__init__(selector_name="ensemble_uncertainty")
         self.score_expression = score_expression
         self.larger_is_better = larger_is_better
         self.min_score = min_score
+        self.max_score = max_score
 
     def _evaluate_expression(self, record: dict[str, Any]) -> float | None:
         return ScoreExpressionEvaluator(score_expression=self.score_expression).evaluate(record)
@@ -37,6 +39,8 @@ class EnsembleUncertaintySelector(BaseSelector):
             if score is None:
                 continue
             if self.min_score is not None and score < self.min_score:
+                continue
+            if self.max_score is not None and score > self.max_score:
                 continue
 
             updated_record = dict(record)
