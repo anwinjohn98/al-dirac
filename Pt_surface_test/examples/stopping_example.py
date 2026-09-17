@@ -7,7 +7,7 @@ from ase.io import read
 
 from al_dirac.workflow.stopping import UncertaintyStoppingCriteria
 
-SCORED_POOL_FILE = Path("real_example_outputs/uncertainty_selection/scored_pool.extxyz")
+SCORED_POOL_FILE = Path("Pt_surface_test/real_example_outputs/uncertainty_selection/scored_pool.extxyz")
 
 
 def load_scored_records() -> list[dict[str, Any]]:

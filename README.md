@@ -27,7 +27,7 @@ selecting what to label next, and submitting/collecting real VASP jobs.
   user-provided SLURM template, and collects results once they finish.
 - **Workflow orchestration**: `ActiveLearningWorkflow` runs the full loop end to end, with
   restart/resume support so it can be split across separate SLURM job submissions (see
-  `examples/workflow_loop.py`).
+  `Pt_surface_test/examples/workflow_loop.py`).
 
 ## Installation
 
@@ -51,7 +51,7 @@ apptainer build al_dirac-python.sif apptainer.def
 
 ## Usage
 
-The `examples/` directory has runnable, end-to-end scripts against real data, each
+The `Pt_surface_test/examples/` directory has runnable, end-to-end scripts against real data, each
 independently testable:
 
 | Script | Demonstrates |
@@ -67,7 +67,7 @@ independently testable:
 | `dft_batch_example.py` | Preparing and submitting real VASP batch jobs |
 | `workflow_loop.py` | The full active-learning loop, split into SLURM-job-safe stages |
 
-Each `examples/<name>.py` has a matching `runs/<name>/<name>.run` SLURM submission script
+Each `Pt_surface_test/examples/<name>.py` has a matching `runs/<name>/<name>.run` SLURM submission script
 where one is needed.
 
 ## Project status

@@ -14,10 +14,10 @@
 REPO_ROOT=/scratch/gautschi/john51/al_dirac
 cd "$REPO_ROOT"
 
-# Relies on outputs already produced by examples/model_factory_example.py
-# (the ensemble checkpoints) and examples/sampler_example.py (the candidate
+# Relies on outputs already produced by Pt_surface_test/examples/model_factory_example.py
+# (the ensemble checkpoints) and Pt_surface_test/examples/sampler_example.py (the candidate
 # structures) -- no need to rerun those here.
 apptainer exec --nv --cleanenv \
   --bind "$REPO_ROOT":/workspace \
   al_dirac-python.sif \
-  bash -c "cd /workspace && export PATH=/usr/local/bin:/usr/bin:/bin LD_LIBRARY_PATH=/.singularity.d/libs CC=/usr/bin/gcc CXX=/usr/bin/g++ && python examples/uncertainty_selection_example.py"
+  bash -c "cd /workspace && export PATH=/usr/local/bin:/usr/bin:/bin LD_LIBRARY_PATH=/.singularity.d/libs CC=/usr/bin/gcc CXX=/usr/bin/g++ && python Pt_surface_test/examples/uncertainty_selection_example.py"

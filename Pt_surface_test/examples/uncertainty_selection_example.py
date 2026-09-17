@@ -15,7 +15,7 @@ from al_dirac.selection.ensemble_uncertainty_selector import EnsembleUncertainty
 from al_dirac.uncertainty.ensemble import EnsembleUncertainty
 from al_dirac.workflow.outputs import write_records_extxyz
 
-SAMPLER_DIR = Path("real_example_outputs/sampler")
+SAMPLER_DIR = Path("Pt_surface_test/real_example_outputs/sampler")
 CANDIDATE_FILES = [
     SAMPLER_DIR / "rattle_samples.extxyz",
     SAMPLER_DIR / "md_samples.extxyz",
@@ -24,14 +24,14 @@ CANDIDATE_FILES = [
 
 DEVICE = "cuda"
 
-MODEL_FACTORY_DIR = Path("real_example_outputs/model_factory")
+MODEL_FACTORY_DIR = Path("Pt_surface_test/real_example_outputs/model_factory")
 MODEL_PATHS = [
     MODEL_FACTORY_DIR / "pt_surface_lora_ensemble_000.model",
     MODEL_FACTORY_DIR / "pt_surface_lora_ensemble_001.model",
     MODEL_FACTORY_DIR / "pt_surface_lora_ensemble_002.model",
 ]
 
-OUTPUT_DIR = Path("real_example_outputs/uncertainty_selection")
+OUTPUT_DIR = Path("Pt_surface_test/real_example_outputs/uncertainty_selection")
 
 
 def load_candidate_records() -> list[dict[str, Any]]:

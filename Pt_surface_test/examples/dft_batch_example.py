@@ -8,25 +8,25 @@ from ase.io import read
 from al_dirac.dft.batch import BatchDFTRunner
 from al_dirac.dft.vasp import VASPLabeler
 
-SELECTED_CANDIDATES_FILE = Path("real_example_outputs/uncertainty_selection/selected_candidates.extxyz")
-SUBMISSION_TEMPLATE = Path("examples/vasp_batch.run")
+SELECTED_CANDIDATES_FILE = Path("Pt_surface_test/real_example_outputs/uncertainty_selection/selected_candidates.extxyz")
+SUBMISSION_TEMPLATE = Path("Pt_surface_test/examples/vasp_batch.run")
 
-OUTPUT_DIR = Path("real_example_outputs/dft_batch")
+OUTPUT_DIR = Path("Pt_surface_test/real_example_outputs/dft_batch")
 
 BATCH_SIZE = 3
 
-# Settings mirror the real INCAR/KPOINTS at Pt_surface_test/710/.
+# Settings mirror the real INCAR/KPOINTS at Pt_surface_test/DFT_data/710/.
 VASP_CALCULATOR_KWARGS = {
     "xc": "PBE",
     "encut": 400,
     "ediff": 1e-5,
-    "ediffg": -0.02,
-    "ibrion": 2,
+    # Single-point labeling, not relaxation: the whole point of active
+    # learning is to label the exact candidate geometry that was queried, not
+    # a relaxed one -- ibrion/isif/potim/ediffg are irrelevant with nsw=0.
+    "ibrion": -1,
+    "nsw": 0,
     "ismear": 1,
     "sigma": 0.2,
-    "isif": 2,
-    "potim": 0.5,
-    "nsw": 400,
     "prec": "Accurate",
     "lreal": False,
     "lwave": False,

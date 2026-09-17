@@ -35,7 +35,7 @@ def print_record_summary(records: list[dict[str, Any]]) -> None:
 
 def main() -> None:
     input_dir = Path("Pt_surface_test")
-    output_dir = Path("real_example_outputs/parser")
+    output_dir = Path("Pt_surface_test/real_example_outputs/parser")
     train_db_path = output_dir / "train.aselmdb"
     train_extxyz_path = output_dir / "train.extxyz"
 

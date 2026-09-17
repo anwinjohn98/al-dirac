@@ -17,13 +17,15 @@ from al_dirac.workflow.outputs import write_records_extxyz
 #   CheapCurate should NOT collapse these into a single structure just
 #   because they land in the same coarse energy bin.
 TRAJECTORIES = {
-    "converged_tail": Path("/scratch/gautschi/john51/al_dirac/Pt_surface_test/710/OUTCAR"),
+    "converged_tail": Path(
+        "/scratch/gautschi/john51/al_dirac/Pt_surface_test/DFT_data/710/OUTCAR"
+    ),
     "relaxation": Path(
-        "/scratch/gautschi/john51/al_dirac/Pt_surface_test/710/OLD_01/OUTCAR"
+        "/scratch/gautschi/john51/al_dirac/Pt_surface_test/DFT_data/710/OLD_01/OUTCAR"
     ),
 }
 
-OUTPUT_DIR = Path("real_example_outputs/cheap_curate_trajectory")
+OUTPUT_DIR = Path("Pt_surface_test/real_example_outputs/cheap_curate_trajectory")
 
 ENERGY_BIN_WIDTHS = [0.5, 1.0, 2.0]
 POSITION_TOLERANCE = 0.05

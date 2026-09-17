@@ -6,9 +6,9 @@ from pathlib import Path
 
 from al_dirac.models.mace_model import MACEModel
 
-INPUT_FILE = Path("real_example_outputs/parser/train.aselmdb")
+INPUT_FILE = Path("Pt_surface_test/real_example_outputs/parser/train.aselmdb")
 
-OUTPUT_DIR = Path("real_example_outputs/mace_scratch_aselmdb")
+OUTPUT_DIR = Path("Pt_surface_test/real_example_outputs/mace_scratch_aselmdb")
 CHECKPOINT_DIR = OUTPUT_DIR / "checkpoints"
 MODEL_DIR = OUTPUT_DIR / "models"
 RESULTS_DIR = OUTPUT_DIR / "results"

@@ -15,7 +15,7 @@ from al_dirac.models.model_factory import (
     SeedStrategy,
 )
 from al_dirac.parser.structure_parser import write_structure_records
-from al_dirac.samplers.rattle import RattleSampler
+from al_dirac.samplers.md import MDSampler
 from al_dirac.selection.ensemble_uncertainty_selector import EnsembleUncertaintySelector
 from al_dirac.uncertainty.ensemble import EnsembleUncertainty
 from al_dirac.workflow.active_learning import ActiveLearningWorkflow
@@ -33,7 +33,7 @@ from al_dirac.workflow.workflow_logger import WorkflowLogger
 
 DEVICE = "cuda"
 
-RUN_DIR = Path("real_example_outputs/workflow_loop")
+RUN_DIR = Path("Pt_surface_test/real_example_outputs/workflow_loop")
 ARTIFACT_DIR = RUN_DIR / "artifacts"
 PLOT_DIR = RUN_DIR / "plots"
 MODEL_FACTORY_CHECKPOINT_DIR = RUN_DIR / "model_factory"
@@ -48,12 +48,12 @@ SUBMIT_SCRIPTS_FILE = RUN_DIR / "submit_scripts.txt"
 # Growing training pool -- seeded once from the parsed real structures, then
 # appended to with newly DFT-labeled structures after every iteration.
 TRAIN_PATH = RUN_DIR / "train.extxyz"
-INITIAL_TRAIN_SOURCE = Path("real_example_outputs/parser/train.extxyz")
-VALID_FILE = Path("real_example_outputs/model_factory/data/valid.extxyz")
-TEST_FILE = Path("real_example_outputs/model_factory/data/test.extxyz")
-SEED_SOURCE_FILE = Path("real_example_outputs/parser/train.extxyz")
+INITIAL_TRAIN_SOURCE = Path("Pt_surface_test/real_example_outputs/parser/train.extxyz")
+VALID_FILE = Path("Pt_surface_test/real_example_outputs/model_factory/data/valid.extxyz")
+TEST_FILE = Path("Pt_surface_test/real_example_outputs/model_factory/data/test.extxyz")
+SEED_SOURCE_FILE = Path("Pt_surface_test/real_example_outputs/parser/train.extxyz")
 
-SUBMISSION_TEMPLATE = Path("examples/vasp_batch.run")
+SUBMISSION_TEMPLATE = Path("Pt_surface_test/examples/vasp_batch.run")
 
 FOUNDATION_MODEL = "medium"
 N_MODELS = 3
@@ -63,8 +63,8 @@ SEED_START = 7
 LORA_RANKS = [2, 4, 8]
 LORA_ALPHA = 8
 
-PLACEHOLDER_MODEL_PATH = Path(
-    "real_example_outputs/mace_finetune/models/pt_surface_finetune.model"
+SAMPLER_MODEL_PATH = Path(
+    "Pt_surface_test/real_example_outputs/mace_finetune/models/pt_surface_finetune.model"
 )
 
 DFT_BATCH_SIZE = 3
@@ -72,13 +72,13 @@ VASP_CALCULATOR_KWARGS = {
     "xc": "PBE",
     "encut": 400,
     "ediff": 1e-5,
-    "ediffg": -0.02,
-    "ibrion": 2,
+    # Single-point labeling, not relaxation: the whole point of active
+    # learning is to label the exact candidate geometry that was queried, not
+    # a relaxed one -- ibrion/isif/potim/ediffg are irrelevant with nsw=0.
+    "ibrion": -1,
+    "nsw": 0,
     "ismear": 1,
     "sigma": 0.2,
-    "isif": 2,
-    "potim": 0.5,
-    "nsw": 400,
     "prec": "Accurate",
     "lreal": False,
     "lwave": False,
@@ -109,6 +109,7 @@ def run_explore() -> None:
     RUN_DIR.mkdir(parents=True, exist_ok=True)
     DFT_ROOT_DIR.mkdir(parents=True, exist_ok=True)
     SUBMIT_SCRIPTS_FILE.unlink(missing_ok=True)
+    logger = WorkflowLogger(run_dir=RUN_DIR)
 
     if STATE_FILE.exists():
         state = load_state(STATE_FILE)
@@ -116,6 +117,15 @@ def run_explore() -> None:
         state = WorkflowState(run_id="workflow_loop", iteration=0)
         if not TRAIN_PATH.exists():
             shutil.copy(INITIAL_TRAIN_SOURCE, TRAIN_PATH)
+
+    # Each iteration is a separate process invocation of run_explore(), and
+    # MACE writes its trained .model/checkpoints/logs under a single
+    # work_dir/checkpoint_dir -- scoping that dir by iteration keeps one
+    # iteration's retraining from overwriting the previous iteration's
+    # models and appending to its log files.
+    iteration_model_factory_dir = (
+        MODEL_FACTORY_CHECKPOINT_DIR / f"iteration_{state.iteration:04d}"
+    )
 
     # run_iteration() already checkpoints the selected structures to disk. If
     # a previous explore run got this far but crashed before DFT submission,
@@ -125,10 +135,10 @@ def run_explore() -> None:
         print(f"iteration {state.iteration}: resuming from existing selection artifact {selecting_artifact}")
         selected_records = load_artifact(selecting_artifact)
     else:
-        placeholder_model = MACEModel.load(
-            PLACEHOLDER_MODEL_PATH, device=DEVICE, default_dtype="float32", head="Default"
+        sampler_model = MACEModel.load(
+            SAMPLER_MODEL_PATH, device=DEVICE, default_dtype="float32", head="Default"
         )
-        uncertainty = EnsembleUncertainty(models=[placeholder_model])
+        uncertainty = EnsembleUncertainty(models=[sampler_model])
 
         selector = EnsembleUncertaintySelector(
             score_expression="force_max_uncertainty",
@@ -145,7 +155,7 @@ def run_explore() -> None:
                 "model": "MACE",
                 "device": DEVICE,
                 "default_dtype": "float32",
-                "checkpoint_dir": MODEL_FACTORY_CHECKPOINT_DIR,
+                "checkpoint_dir": iteration_model_factory_dir,
             },
         )
         factory.add_strategy(SeedStrategy(seed_start=SEED_START))
@@ -155,12 +165,15 @@ def run_explore() -> None:
             )
         )
 
-        sampler = RattleSampler(
-            stdev=0.05,
-            n_samples=5,
-            seed=7,
-            min_distance_scale=0.7,
-            max_attempts_per_sample=20,
+        sampler = MDSampler(
+            dynamics_name="Langevin",
+            timestep_fs=1.0,
+            steps=200,
+            sample_interval=40,
+            initialize_velocities=True,
+            velocity_temperature_K=1000.0,
+            dynamics_kwargs={"temperature_K": 1000.0, "friction": 0.01},
+            calculator=sampler_model.calculator,
         )
 
         workflow = ActiveLearningWorkflow(
@@ -174,7 +187,6 @@ def run_explore() -> None:
             dft_runner=None,
             coverage_curation_pipeline=None,
         )
-        logger = WorkflowLogger(run_dir=RUN_DIR)
 
         selected_records = workflow.run_iteration(
             state,
@@ -208,7 +220,7 @@ def run_explore() -> None:
                 "loss": "weighted",
                 "num_workers": 0,
                 "enable_cueq": True,
-                "work_dir": str(MODEL_FACTORY_CHECKPOINT_DIR),
+                "work_dir": str(iteration_model_factory_dir),
                 "extra_args": [
                     "--device", DEVICE,
                     "--default_dtype", "float32",
@@ -269,14 +281,28 @@ def run_explore() -> None:
     submit_scripts = [str(batch["submit_script"]) for batch in prepared_batches]
     SUBMIT_SCRIPTS_FILE.write_text("\n".join(submit_scripts) + "\n")
 
+    total_jobs = sum(len(batch.get("jobs", [])) for batch in prepared_batches)
+    logger.log_note(
+        f"DFT batches prepared in {iteration_dft_dir}: "
+        f"{len(prepared_batches)} batch(es), {total_jobs} job(s)",
+        state=state,
+        dft_dir=str(iteration_dft_dir),
+        n_batches=len(prepared_batches),
+        n_jobs=total_jobs,
+    )
+
     print(f"iteration {state.iteration}: prepared {len(prepared_batches)} DFT batch(es)")
     print(f"submit scripts written to {SUBMIT_SCRIPTS_FILE}")
 
 
 def run_resume() -> None:
     state = load_state(STATE_FILE)
+    logger = WorkflowLogger(run_dir=RUN_DIR)
     prepared_batches = load_artifact(PREPARED_BATCHES_FILE)
     total_jobs = sum(len(batch.get("jobs", [])) for batch in prepared_batches)
+    dft_dir = (
+        str(prepared_batches[0]["batch_dir"].parent) if prepared_batches else None
+    )
 
     incomplete = incomplete_dft_batches(prepared_batches, DFT_RUNNER)
     if incomplete:
@@ -284,6 +310,17 @@ def run_resume() -> None:
 
     labeled_records = collect_completed_dft_from_batches(prepared_batches, DFT_RUNNER)
     print(f"collected {len(labeled_records)} labeled structures")
+
+    logger.log_note(
+        f"DFT results collected from {dft_dir}: "
+        f"{len(labeled_records)} of {total_jobs} job(s) labeled, "
+        f"{len(incomplete)} incomplete batch(es)",
+        state=state,
+        dft_dir=dft_dir,
+        n_jobs=total_jobs,
+        n_labeled=len(labeled_records),
+        n_incomplete_batches=len(incomplete),
+    )
 
     if total_jobs > 0 and not labeled_records:
         raise RuntimeError(

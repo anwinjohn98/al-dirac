@@ -21,8 +21,10 @@ runs/*/slurm-*.out
 runs/*/slurm-*.err
 
 # Research data (kept local -- large, and VASP inputs include licensed
-# POTCAR pseudopotentials that must not be redistributed)
-Pt_surface_test/
+# POTCAR pseudopotentials that must not be redistributed). examples/ lives
+# alongside this data but is package source, so it stays tracked.
+Pt_surface_test/*
+!Pt_surface_test/examples/
 
 # MLIP / DFT artifacts, wherever they end up
 *.model

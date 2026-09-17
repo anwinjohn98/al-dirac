@@ -9,8 +9,8 @@ from al_dirac.models.mace_model import MACEModel
 from al_dirac.parser.structure_parser import write_structure_records
 from al_dirac.workflow.train_store import load_labeled_records_from_train_path
 
-INPUT_ASELMDB = Path("real_example_outputs/parser/train.aselmdb")
-OUTPUT_DIR = Path("real_example_outputs/format_comparison")
+INPUT_ASELMDB = Path("Pt_surface_test/real_example_outputs/parser/train.aselmdb")
+OUTPUT_DIR = Path("Pt_surface_test/real_example_outputs/format_comparison")
 
 DEVICE = "cuda"
 EPOCHS = 5

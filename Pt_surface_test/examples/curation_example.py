@@ -47,8 +47,8 @@ def print_stage_summary(result) -> None:
 
 
 def main() -> None:
-    input_db_path = Path("real_example_outputs/parser/train.aselmdb")
-    output_dir = Path("real_example_outputs/curation")
+    input_db_path = Path("Pt_surface_test/real_example_outputs/parser/train.aselmdb")
+    output_dir = Path("Pt_surface_test/real_example_outputs/curation")
     plot_dir = output_dir / "plots"
 
     clean_output_dir(output_dir)

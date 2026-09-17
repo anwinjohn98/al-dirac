@@ -18,7 +18,7 @@ apptainer exec --nv --cleanenv \
   --bind "$REPO_ROOT":"$REPO_ROOT" \
   --bind /depot/jgreeley/apps/vasp/vasppot:/depot/jgreeley/apps/vasp/vasppot \
   al_dirac-python.sif \
-  bash -c "cd $REPO_ROOT && export PATH=/usr/local/bin:/usr/bin:/bin LD_LIBRARY_PATH=/.singularity.d/libs CC=/usr/bin/gcc CXX=/usr/bin/g++ VASP_PP_PATH=/depot/jgreeley/apps/vasp/vasppot/ && python examples/workflow_loop.py explore"
+  bash -c "cd $REPO_ROOT && export PATH=/usr/local/bin:/usr/bin:/bin LD_LIBRARY_PATH=/.singularity.d/libs CC=/usr/bin/gcc CXX=/usr/bin/g++ VASP_PP_PATH=/depot/jgreeley/apps/vasp/vasppot/ PYTHONPATH=$REPO_ROOT && python Pt_surface_test/examples/workflow_loop.py explore"
 EXPLORE_EXIT=$?
 
 if [ "$EXPLORE_EXIT" -ne 0 ]; then
@@ -26,7 +26,7 @@ if [ "$EXPLORE_EXIT" -ne 0 ]; then
     exit "$EXPLORE_EXIT"
 fi
 
-SUBMIT_LIST="$REPO_ROOT/real_example_outputs/workflow_loop/submit_scripts.txt"
+SUBMIT_LIST="$REPO_ROOT/Pt_surface_test/real_example_outputs/workflow_loop/submit_scripts.txt"
 if [ ! -f "$SUBMIT_LIST" ]; then
     echo "workflow_loop: stopped, no DFT batches to submit"
     exit 0

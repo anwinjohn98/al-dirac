@@ -14,10 +14,10 @@ from al_dirac.models.model_factory import (
     SeedStrategy,
 )
 
-INPUT_FILE = Path("real_example_outputs/parser/train.extxyz")
+INPUT_FILE = Path("Pt_surface_test/real_example_outputs/parser/train.extxyz")
 FOUNDATION_MODEL = "medium"
 
-OUTPUT_DIR = Path("real_example_outputs/model_factory")
+OUTPUT_DIR = Path("Pt_surface_test/real_example_outputs/model_factory")
 DATA_DIR = OUTPUT_DIR / "data"
 
 DEVICE = "cuda"

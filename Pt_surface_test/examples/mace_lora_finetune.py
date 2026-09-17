@@ -9,13 +9,13 @@ from ase.io import read, write
 
 from al_dirac.models.mace_model import MACEModel
 
-INPUT_FILE = Path("real_example_outputs/parser/train.extxyz")
+INPUT_FILE = Path("Pt_surface_test/real_example_outputs/parser/train.extxyz")
 # "medium" is MACE-MP-0, auto-downloaded by mace_run_train; it has a single
 # head, so it avoids the remove_pt_head bug hit by our local multihead
 # checkpoint (foundational_models/MACE/mace-mh-1.model).
 FOUNDATION_MODEL = "medium"
 
-OUTPUT_DIR = Path("real_example_outputs/mace_lora_finetune")
+OUTPUT_DIR = Path("Pt_surface_test/real_example_outputs/mace_lora_finetune")
 DATA_DIR = OUTPUT_DIR / "data"
 CHECKPOINT_DIR = OUTPUT_DIR / "checkpoints"
 MODEL_DIR = OUTPUT_DIR / "models"

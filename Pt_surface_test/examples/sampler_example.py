@@ -10,12 +10,12 @@ from al_dirac.samplers.md import MDSampler
 from al_dirac.samplers.rattle import RattleSampler
 from al_dirac.workflow.outputs import write_records_extxyz
 
-INPUT_FILE = Path("real_example_outputs/parser/train.extxyz")
+INPUT_FILE = Path("Pt_surface_test/real_example_outputs/parser/train.extxyz")
 MODEL_PATH = Path(
-    "real_example_outputs/mace_multihead_finetune/models/pt_surface_multihead_finetune.model"
+    "Pt_surface_test/real_example_outputs/mace_multihead_finetune/models/pt_surface_multihead_finetune.model"
 )
 
-OUTPUT_DIR = Path("real_example_outputs/sampler")
+OUTPUT_DIR = Path("Pt_surface_test/real_example_outputs/sampler")
 
 DEVICE = "cuda"
 
@@ -49,7 +49,6 @@ def main() -> None:
     seed = load_seed_structure()
     model = MACEModel.load(MODEL_PATH, device=DEVICE, default_dtype="float32")
     calculator = model.calculator
-    seed.calc = calculator
 
     seed_path = write_records_extxyz([{"atoms": seed}], OUTPUT_DIR / "seed.extxyz")
 
@@ -80,6 +79,7 @@ def main() -> None:
         },
         log_progress=True,
         log_interval=10,
+        calculator=calculator,
     )
     md_samples = attach_calculator(md_sampler.sample(seed), calculator)
     md_path = write_records_extxyz(
@@ -107,6 +107,7 @@ def main() -> None:
         comm=None,
         collect_trajectory=True,
         sample_interval=1,
+        calculator=calculator,
     )
     dimer_samples = attach_calculator(dimer_sampler.sample(seed), calculator)
     dimer_path = write_records_extxyz(

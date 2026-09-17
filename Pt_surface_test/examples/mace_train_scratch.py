@@ -9,9 +9,9 @@ from ase.io import read, write
 
 from al_dirac.models.mace_model import MACEModel
 
-INPUT_FILE = Path("real_example_outputs/parser/train.extxyz")
+INPUT_FILE = Path("Pt_surface_test/real_example_outputs/parser/train.extxyz")
 
-OUTPUT_DIR = Path("real_example_outputs/mace_scratch")
+OUTPUT_DIR = Path("Pt_surface_test/real_example_outputs/mace_scratch")
 DATA_DIR = OUTPUT_DIR / "data"
 CHECKPOINT_DIR = OUTPUT_DIR / "checkpoints"
 MODEL_DIR = OUTPUT_DIR / "models"
