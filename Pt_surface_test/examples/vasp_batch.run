@@ -8,8 +8,8 @@
 #SBATCH --qos=standby
 #SBATCH --account=jgreeley
 
-##SBATCH --output=default_output-%j.out
-##SBATCH --error=default_error-%j.error
+#SBATCH --output=__BATCH_DIR__/slurm-%j.out
+#SBATCH --error=__BATCH_DIR__/slurm-%j.err
 
 #Go in the work directory
 cd $SLURM_SUBMIT_DIR
