@@ -1,0 +1,28 @@
+#!/bin/bash
+#SBATCH --job-name=workflow_loop_reasonable_defaults_resume
+#SBATCH --nodes=1
+#SBATCH --gpus-per-node=2
+#SBATCH --ntasks=64
+#SBATCH --mail-user=john51@purdue.edu
+#SBATCH --time=01:00:00
+#SBATCH --partition=smallgpu
+#SBATCH --qos=normal
+#SBATCH --account=jgreeley
+#SBATCH --output=/scratch/gautschi/john51/al_dirac/runs/workflow_loop_reasonable_defaults/slurm-resume-%j.out
+#SBATCH --error=/scratch/gautschi/john51/al_dirac/runs/workflow_loop_reasonable_defaults/slurm-resume-%j.err
+
+REPO_ROOT=/scratch/gautschi/john51/al_dirac
+cd "$REPO_ROOT"
+
+apptainer exec --nv --cleanenv \
+  --bind "$REPO_ROOT":"$REPO_ROOT" \
+  al_dirac-python.sif \
+  bash -c "cd $REPO_ROOT && export PATH=/usr/local/bin:/usr/bin:/bin LD_LIBRARY_PATH=/.singularity.d/libs CC=/usr/bin/gcc CXX=/usr/bin/g++ PYTHONPATH=$REPO_ROOT && python EXAMPLES/workflow_loop_reasonable_defaults.py resume"
+RESUME_EXIT=$?
+
+if [ "$RESUME_EXIT" -ne 0 ]; then
+    echo "workflow_loop_reasonable_defaults: resume stage failed (exit $RESUME_EXIT)" >&2
+    exit "$RESUME_EXIT"
+fi
+
+sbatch "$REPO_ROOT/runs/workflow_loop_reasonable_defaults/workflow_loop_reasonable_defaults_explore.run"
