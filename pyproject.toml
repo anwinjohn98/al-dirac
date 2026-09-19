@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "al-dirac"  # pip install al-dirac
 version = "0.1.0"
-description = "Active Learning with Diversity, Informativeness, and Representativeness for Atomic Catalysis"
+description = "Practical Active Learning with Diversity, Informativeness, and Representativeness for Atomic Catalysis"
 authors = [
 	{ name = "Anwin John", email = "anwinjohn98@gmail.com" }
 ]

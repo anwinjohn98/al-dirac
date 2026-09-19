@@ -1,6 +1,6 @@
-# al-dirac
+# PAL-DIRAC
 
-Active Learning with Diversity, Informativeness, and Representativeness for Atomic Catalysis.
+Practical Active Learning with Diversity, Informativeness, and Representativeness for Atomic Catalysis.
 
 `al-dirac` automates the active-learning loop for training machine-learned interatomic
 potentials (currently [MACE](https://github.com/ACEsuit/mace)) against VASP DFT data,
