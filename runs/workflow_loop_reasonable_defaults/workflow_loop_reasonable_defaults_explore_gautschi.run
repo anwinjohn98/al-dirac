@@ -40,4 +40,4 @@ while IFS= read -r SCRIPT; do
 done < "$SUBMIT_LIST"
 
 DEPENDENCY=$(IFS=:; echo "afterany:${JOB_IDS[*]}")
-sbatch --dependency="$DEPENDENCY" "$REPO_ROOT/runs/workflow_loop_reasonable_defaults/workflow_loop_reasonable_defaults_resume.run"
+sbatch --dependency="$DEPENDENCY" "$REPO_ROOT/runs/workflow_loop_reasonable_defaults/workflow_loop_reasonable_defaults_resume_gautschi.run"

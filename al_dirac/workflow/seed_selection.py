@@ -27,7 +27,7 @@ def select_seed_records(
     records: list[dict[str, Any]],
     *,
     mode: str = "all",
-    k: int | None = None,
+    k: int | Callable[[int], int] | None = None,
     curation_pipeline: StructureCurationPipeline | None = None,
     curation_kwargs: dict[str, Any] | None = None,
     uncertainty: BaseUncertainty | None = None,
@@ -36,6 +36,12 @@ def select_seed_records(
     score_records: Callable[..., list[dict[str, Any]]],
     curate_records: Callable[..., list[dict[str, Any]]],
 ) -> list[dict[str, Any]]:
+    # k may be a plain int/None, or a pure function of the input pool size
+    # (called once here, at most a second time by the caller for logging --
+    # see ActiveLearningWorkflow.run_iteration()) that lets seed_k scale
+    # with however much data actually exists instead of a fixed constant.
+    if callable(k):
+        k = k(len(records))
     if k is not None and k < 0:
         raise ValueError("seed_k must be non-negative or None.")
     if k == 0 or not records:

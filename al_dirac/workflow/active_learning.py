@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
 from ase import Atoms
@@ -117,6 +117,23 @@ def _count_train_records(train_path: str | Path) -> int:
         return 0
     structures = read(path, index=":")
     return len(structures) if isinstance(structures, list) else 1
+
+
+def _resolve_train_kwargs_callables(
+    train_kwargs: dict[str, Any] | None,
+    *,
+    train_size: int,
+) -> dict[str, Any] | None:
+    # Any value in train_kwargs (e.g. batch_size, valid_batch_size) may be a
+    # pure function of the current training pool size instead of a fixed
+    # constant, so it can scale with however much data actually exists
+    # rather than being tuned for one specific dataset size.
+    if train_kwargs is None:
+        return None
+    return {
+        key: (value(train_size) if callable(value) else value)
+        for key, value in train_kwargs.items()
+    }
 
 
 class ActiveLearningWorkflow:
@@ -426,7 +443,7 @@ class ActiveLearningWorkflow:
         records: list[dict[str, Any]],
         *,
         mode: str = "all",
-        k: int | None = None,
+        k: int | Callable[[int], int] | None = None,
         curation_pipeline: StructureCurationPipeline | None = None,
         curation_kwargs: dict[str, Any] | None = None,
         uncertainty: BaseUncertainty | None = None,
@@ -481,11 +498,11 @@ class ActiveLearningWorkflow:
     def select_for_labeling(
         self,
         scored_records: list[dict[str, Any]],
-        uncertainty_k: int | None = None,
+        uncertainty_k: int | Callable[[int], int] | None = None,
         *,
         selector: BaseSelector | None = None,
         uncertainty_curation_pipeline: BaseStructureCuration | None = None,
-        coverage_k: int | None = None,
+        coverage_k: int | Callable[[int], int] | None = None,
         coverage_curation_pipeline: StructureCurationPipeline | None = None,
         coverage_curation_kwargs: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
@@ -503,17 +520,28 @@ class ActiveLearningWorkflow:
     def _select_for_labeling_with_report(
         self,
         scored_records: list[dict[str, Any]],
-        uncertainty_k: int | None = None,
+        uncertainty_k: int | Callable[[int], int] | None = None,
         *,
         selector: BaseSelector | None = None,
         uncertainty_curation_pipeline: BaseStructureCuration | None = None,
-        coverage_k: int | None = None,
+        coverage_k: int | Callable[[int], int] | None = None,
         coverage_curation_pipeline: StructureCurationPipeline | None = None,
         coverage_curation_kwargs: dict[str, Any] | None = None,
     ) -> tuple[list[dict[str, Any]], CurationStageReport | None]:
+        # uncertainty_k may be a plain int/None, or a pure function of the
+        # scored candidate pool size -- resolved here (not inside the
+        # selector) with the pool size actually available at this point in
+        # the workflow, so it can scale with however many candidates exist
+        # this iteration instead of a fixed constant.
+        if callable(uncertainty_k):
+            uncertainty_k = uncertainty_k(len(scored_records))
         if uncertainty_k is not None and uncertainty_k < 0:
             raise ValueError("uncertainty_k must be non-negative or None.")
-        if coverage_k is not None and coverage_k < 0:
+        # coverage_k resolved later, inside select_for_coverage() itself
+        # (with the post-min-score-filter pool size) -- just skip this
+        # early check for a callable, select_for_coverage() validates the
+        # resolved value itself.
+        if coverage_k is not None and not callable(coverage_k) and coverage_k < 0:
             raise ValueError("coverage_k must be non-negative or None.")
 
         selector = self.selector if selector is None else selector
@@ -551,6 +579,24 @@ class ActiveLearningWorkflow:
             if record_identity(record) not in selected_ids
         ]
 
+        # Coverage specifically targets records the selector is confidently
+        # sure about (score below its own min_score) -- an ensemble can be
+        # falsely confident (low disagreement) on out-of-distribution
+        # structures if all members share the same blind spot, so these are
+        # worth diverse coverage too, not an arbitrary slice of leftovers.
+        # No-ops (keeps remaining_records as-is) for any selector without
+        # these attributes.
+        coverage_min_score = getattr(selector, "min_score", None)
+        coverage_score_expression = getattr(selector, "score_expression", None)
+        if coverage_min_score is not None and coverage_score_expression is not None:
+            evaluator = ScoreExpressionEvaluator(score_expression=coverage_score_expression)
+            remaining_records = [
+                record
+                for record in remaining_records
+                if (score := evaluator.evaluate(record)) is not None
+                and score < coverage_min_score
+            ]
+
         coverage_records: list[dict[str, Any]] = []
         if coverage_k != 0 and remaining_records:
             coverage_records = self.select_for_coverage(
@@ -575,13 +621,20 @@ class ActiveLearningWorkflow:
     def select_for_coverage(
         self,
         records: list[dict[str, Any]],
-        coverage_k: int | None,
+        coverage_k: int | Callable[[int], int] | None,
         *,
         coverage_curation_pipeline: StructureCurationPipeline | None = None,
         coverage_curation_kwargs: dict[str, Any] | None = None,
         require_pipeline: bool = False,
         channel: str = "coverage",
     ) -> list[dict[str, Any]]:
+        # coverage_k may be a plain int/None, or a pure function of the
+        # records pool size -- resolved here with whatever pool this call
+        # actually received (e.g. _select_for_labeling_with_report already
+        # filters this to the below-min-score leftover pool before calling
+        # here, so a fraction is naturally "% of the low-uncertainty pool").
+        if callable(coverage_k):
+            coverage_k = coverage_k(len(records))
         if coverage_k is not None and coverage_k < 0:
             raise ValueError("coverage_k must be non-negative or None.")
         if coverage_k == 0 or not records:
@@ -650,7 +703,7 @@ class ActiveLearningWorkflow:
     def run_iteration(
         self,
         state: WorkflowState,
-        uncertainty_k: int | None = None,
+        uncertainty_k: int | Callable[[int], int] | None = None,
         *,
         selection_mode: str = "auto",
         cold_start_k: int | None = None,
@@ -675,7 +728,7 @@ class ActiveLearningWorkflow:
         parser_curation_pipeline: StructureCurationPipeline | None = None,
         parser_curation_kwargs: dict[str, Any] | None = None,
         seed_selection_mode: str = "all",
-        seed_k: int | None = None,
+        seed_k: int | Callable[[int], int] | None = None,
         seed_selection_curation_pipeline: StructureCurationPipeline | None = None,
         seed_selection_curation_kwargs: dict[str, Any] | None = None,
         seed_selection_uncertainty: BaseUncertainty | None = None,
@@ -694,7 +747,7 @@ class ActiveLearningWorkflow:
         model_error_stop_statistic: str = "max",
         selector: BaseSelector | None = None,
         uncertainty_curation_pipeline: BaseStructureCuration | None = None,
-        coverage_k: int | None = None,
+        coverage_k: int | Callable[[int], int] | None = None,
         coverage_curation_pipeline: StructureCurationPipeline | None = None,
         coverage_curation_kwargs: dict[str, Any] | None = None,
         dft_runner: BatchDFTRunner | None = None,
@@ -836,12 +889,15 @@ class ActiveLearningWorkflow:
                     factory_train_kwargs = self._resolve_model_factory_train_kwargs(
                         model_factory_train_kwargs, len(factories)
                     )
+                    current_train_size = _count_train_records(train_path)
                     for factory, factory_kwargs in zip(factories, factory_train_kwargs):
                         trained_models.extend(
                             factory.train(
                                 train_path,
                                 valid_path=valid_path,
-                                train_kwargs=factory_kwargs,
+                                train_kwargs=_resolve_train_kwargs_callables(
+                                    factory_kwargs, train_size=current_train_size
+                                ),
                                 load_checkpoints=load_model_factory_checkpoints,
                                 gpu_ids=model_factory_gpu_ids,
                             )
@@ -911,6 +967,11 @@ class ActiveLearningWorkflow:
 
                 if seed_records:
                     if self._stage_allowed("seed_selecting", restart_from_stage):
+                        # Captured before select_seed_records() reassigns
+                        # seed_records to its (smaller) output below -- needed
+                        # to re-resolve a callable seed_k for logging with the
+                        # same input size it was actually resolved against.
+                        seed_pool_size = len(seed_records)
                         seed_records = self.select_seed_records(
                             seed_records,
                             mode=seed_selection_mode,
@@ -929,6 +990,9 @@ class ActiveLearningWorkflow:
                             score_key=seed_selection_score_key,
                             random_seed=seed_selection_random_seed,
                         )
+                        resolved_seed_k = (
+                            seed_k(seed_pool_size) if callable(seed_k) else seed_k
+                        )
                         self._checkpoint_records(
                             seed_records,
                             state=state,
@@ -936,7 +1000,7 @@ class ActiveLearningWorkflow:
                             artifact_dir=artifact_dir,
                             logger=logger,
                             selection_mode=seed_selection_mode,
-                            seed_k=seed_k,
+                            seed_k=resolved_seed_k,
                         )
                         write_seed_selection_plot(
                             seed_records,
@@ -1184,7 +1248,7 @@ class ActiveLearningWorkflow:
         seed_structures_by_iteration: list[list[Atoms]] | None = None,
         candidate_structures_by_iteration: list[list[Atoms]] | None = None,
         dft_root_dir: str | Path | None = None,
-        uncertainty_k: int | None = None,
+        uncertainty_k: int | Callable[[int], int] | None = None,
         valid_path: str | Path | None = None,
         train_prediction_model: bool = True,
         train_model_ensemble: bool = True,
@@ -1201,7 +1265,7 @@ class ActiveLearningWorkflow:
         parser_curation_pipeline: StructureCurationPipeline | None = None,
         parser_curation_kwargs: dict[str, Any] | None = None,
         seed_selection_mode: str = "all",
-        seed_k: int | None = None,
+        seed_k: int | Callable[[int], int] | None = None,
         seed_selection_curation_pipeline: StructureCurationPipeline | None = None,
         seed_selection_curation_kwargs: dict[str, Any] | None = None,
         seed_selection_uncertainty: BaseUncertainty | None = None,
@@ -1220,7 +1284,7 @@ class ActiveLearningWorkflow:
         model_error_stop_statistic: str = "max",
         selector: BaseSelector | None = None,
         uncertainty_curation_pipeline: BaseStructureCuration | None = None,
-        coverage_k: int | None = None,
+        coverage_k: int | Callable[[int], int] | None = None,
         coverage_curation_pipeline: StructureCurationPipeline | None = None,
         coverage_curation_kwargs: dict[str, Any] | None = None,
         dft_runner: BatchDFTRunner | None = None,

@@ -788,7 +788,7 @@ The main orchestrator: runs the full parse -> train -> sample -> curate -> score
 
 **`run_iteration(state, uncertainty_k=None, *, ...)`** -- runs one iteration. Parameters:
 - `state: WorkflowState` -- required; mutated in place.
-- `uncertainty_k: int | None = None` -- number of top-scored candidates to select for labeling (`None` = all that pass the selector's score band).
+- `uncertainty_k: int | Callable[[int], int] | None = None` -- number of top-scored candidates to select for labeling (`None` = all that pass the selector's score band). A callable is invoked with the scored candidate pool size right before selection and its return value used as `uncertainty_k`.
 - `selection_mode: str = "auto"` -- `"auto"` (cold-start at iteration 0 with no training data, else uncertainty), `"cold_start"`, or `"uncertainty"`.
 - `cold_start_k: int | None = None` -- how many to pick in cold-start mode.
 - `candidate_structures: list[Atoms] | None = None` -- skip sampling and use these directly as the candidate pool.
@@ -801,7 +801,7 @@ The main orchestrator: runs the full parse -> train -> sample -> curate -> score
 - `train_model_ensemble: bool = True` -- train the `model_factory` committee.
 - `train_kwargs: dict | None = None` -- kwargs for `model.train()`.
 - `model_factory: ModelEnsembleFactory | Sequence[ModelEnsembleFactory] | None = None` -- overrides the constructor's `model_factory`.
-- `model_factory_train_kwargs: dict | Sequence[dict | None] | None = None` -- kwargs for `factory.train()`; a dict is broadcast to every factory, a sequence gives one dict per factory.
+- `model_factory_train_kwargs: dict | Sequence[dict | None] | None = None` -- kwargs for `factory.train()`; a dict is broadcast to every factory, a sequence gives one dict per factory. Any value in the dict may be a `Callable[[int], int]`, resolved right before training with the current training-pool record count (e.g. for a pool-size-dependent `batch_size`).
 - `model_factory_gpu_ids: Sequence[int] | None = None` -- GPU IDs to train ensemble members concurrently on (see `ModelEnsembleFactory.train`).
 - `load_model_factory_checkpoints: bool = True`
 - `parse_base_dir: str | Path | None = None` -- parse raw DFT outputs from this directory (iteration 0 only).
@@ -810,7 +810,7 @@ The main orchestrator: runs the full parse -> train -> sample -> curate -> score
 - `parser_curation_pipeline: StructureCurationPipeline | None = None` -- overrides the constructor default for this call.
 - `parser_curation_kwargs: dict | None = None`
 - `seed_selection_mode: str = "all"` -- how to pick seeds from the training pool for sampling.
-- `seed_k: int | None = None`
+- `seed_k: int | Callable[[int], int] | None = None` -- a callable is invoked with the seed-candidate pool size right before seed selection.
 - `seed_selection_curation_pipeline: StructureCurationPipeline | None = None`
 - `seed_selection_curation_kwargs: dict | None = None`
 - `seed_selection_uncertainty: BaseUncertainty | None = None` -- overrides which uncertainty estimator scores seed candidates.
@@ -829,7 +829,7 @@ The main orchestrator: runs the full parse -> train -> sample -> curate -> score
 - `model_error_stop_statistic: str = "max"` -- passed to `ModelErrorStoppingCriteria`.
 - `selector: BaseSelector | None = None` -- overrides the constructor's `selector`.
 - `uncertainty_curation_pipeline: BaseStructureCuration | None = None` -- overrides the constructor default for this call.
-- `coverage_k: int | None = None` -- how many additional "coverage" records to add alongside the uncertainty selection (`0` disables it).
+- `coverage_k: int | Callable[[int], int] | None = None` -- how many additional "coverage" records to add alongside the uncertainty selection (`0` disables it). Candidates are the leftover records with score below `selector.min_score` (confidently-known, not just unselected); a callable is invoked with that filtered pool's size inside `select_for_coverage()`.
 - `coverage_curation_pipeline: StructureCurationPipeline | None = None`
 - `coverage_curation_kwargs: dict | None = None`
 - `dft_runner: BatchDFTRunner | None = None` -- overrides the constructor's `dft_runner`.
@@ -857,10 +857,10 @@ Returns the list of selected (or labeled, if `dft_root_dir` was given) records f
 - `generate_candidate_records(seed_records, *, iteration, sampler=None, sampler_kwargs=None, common_data=None) -> list[dict]`
 - `curate_parsed_records(records, *, parser_curation_pipeline=None, parser_curation_kwargs=None) -> list[dict]`
 - `score_records(records, *, uncertainty=None) -> list[dict]`
-- `select_seed_records(records, *, mode="all", k=None, curation_pipeline=None, curation_kwargs=None, uncertainty=None, score_key="force_max_uncertainty", random_seed=None) -> list[dict]`
+- `select_seed_records(records, *, mode="all", k: int | Callable[[int], int] | None = None, curation_pipeline=None, curation_kwargs=None, uncertainty=None, score_key="force_max_uncertainty", random_seed=None) -> list[dict]`
 - `curate_records(records, *, curation_pipeline=None, curation_kwargs=None) -> list[dict]`
-- `select_for_labeling(scored_records, uncertainty_k=None, *, selector=None, uncertainty_curation_pipeline=None, coverage_k=None, coverage_curation_pipeline=None, coverage_curation_kwargs=None) -> list[dict]`
-- `select_for_coverage(records, coverage_k, *, coverage_curation_pipeline=None, coverage_curation_kwargs=None, require_pipeline=False, channel="coverage") -> list[dict]`
+- `select_for_labeling(scored_records, uncertainty_k: int | Callable[[int], int] | None = None, *, selector=None, uncertainty_curation_pipeline=None, coverage_k: int | Callable[[int], int] | None = None, coverage_curation_pipeline=None, coverage_curation_kwargs=None) -> list[dict]`
+- `select_for_coverage(records, coverage_k: int | Callable[[int], int], *, coverage_curation_pipeline=None, coverage_curation_kwargs=None, require_pipeline=False, channel="coverage") -> list[dict]`
 - `label_selected(selected_records, *, root_dir, dft_runner=None, labeler_kwargs=None, template_replacements=None) -> list[dict]`
 - `append_records_to_db(db, records, *, split, is_labeled=None, is_selected=None, source="active_learning") -> list[int]`
 - `append_selected_to_db(db, selected_records, *, split="selected", source="active_learning") -> list[int]`
