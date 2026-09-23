@@ -149,14 +149,13 @@ PRE_UNCERTAINTY_CURATION_PIPELINE = ForceCutoffCurate(max_force=50.0)
 # which already filters coverage candidates to score < selector.min_score)
 # -- ClusterCurate avoids picking several near-duplicate structures from
 # the same narrow region. Same real, working setup as
-# Pt_surface_test/examples/curation_example.py. species is pure Pt (78),
-# matching PARSE_BASE_DIR's real data -- extend for a system with
-# adsorbates.
+# Pt_surface_test/examples/curation_example.py. species is Pt + O (78, 8),
+# matching the O-on-Pt-surface adsorption dataset.
 COVERAGE_CURATION_PIPELINE = StructureCurationPipeline(
     cheap_curate=CheapCurate(),
     cluster_curate=ClusterCurate(
         soap_descriptor=SOAPDescriptor(
-            species=["Pt"],
+            species=["Pt", "O"],
             r_cut=6.0,
             n_max=6,
             l_max=4,
@@ -239,8 +238,13 @@ VASP_CALCULATOR_KWARGS = {
     "algo": "VeryFast",
     "npar": 16,
     "nelm": 300,
-    "kpts": (5, 1, 1),
-    "gamma": True,
+    # kspacing (not a fixed kpts tuple) adapts to each structure's actual
+    # cell size -- a single kpts value would be wrong across a dataset with
+    # varying slab/vacuum dimensions. 0.16 A^-1 is on the tighter/accurate
+    # side, appropriate for a metal (denser sampling near the Fermi
+    # surface); for a 5.62x5.62x32.07 A cell this yields a (7, 7, 2) mesh.
+    "kspacing": 0.16,
+    "kgamma": True,
 }
 
 DFT_RUNNER = BatchDFTRunner(
@@ -426,7 +430,13 @@ def run_explore() -> None:
             model_factory=factory,
             model_factory_train_kwargs={
                 "foundation_model": FOUNDATION_MODEL,
-                "atomic_numbers": [78],
+                "atomic_numbers": [78, 8],
+                # User-supplied reference states, not "average"/"foundation":
+                # Pt bulk (4-atom fcc cell) per-atom energy, O2 molecule
+                # energy / 2 -- the same reference states adsorption energy
+                # is normally defined against, and both avoid the unreliable
+                # isolated-atom-in-vacuum DFT calculation for either element.
+                "E0s": "{78: -6.0562835025, 8: -4.93117032}",
                 "energy_key": "REF_energy",
                 "forces_key": "REF_forces",
                 "stress_key": "REF_stress",
