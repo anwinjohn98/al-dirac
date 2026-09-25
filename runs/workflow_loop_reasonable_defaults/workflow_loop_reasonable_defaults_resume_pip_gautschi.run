@@ -26,4 +26,4 @@ if [ "$RESUME_EXIT" -ne 0 ]; then
     exit "$RESUME_EXIT"
 fi
 
-sbatch "$REPO_ROOT/runs/workflow_loop_reasonable_defaults/workflow_loop_reasonable_defaults_explore_pip.run"
+sbatch "$REPO_ROOT/runs/workflow_loop_reasonable_defaults/workflow_loop_reasonable_defaults_explore_pip_gautschi.run"
